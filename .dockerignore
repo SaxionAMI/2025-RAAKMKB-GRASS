@@ -1,0 +1,33 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment folders
+.env
+.venv/
+
+# Dagster outputs and MLflow runs
+grass_pipeline_dagster/dagster_output/
+mlruns/
+
+# Data and model artifacts
+data/
+models/
+
+# Trained models and weights
+*.pt
+*.joblib
+*.pth
+
+# Audio and image files
+*.wav
+*.png
+
+# Dataset files
+*.csv
+
+# OS metadata (optional)
+.DS_Store
+Thumbs.db

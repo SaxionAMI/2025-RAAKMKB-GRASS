@@ -1,0 +1,13 @@
+numpy
+soundfile
+torch
+matplotlib
+dagster
+dagster-webserver
+torchvision
+mlflow
+pandas
+scikit-learn
+seaborn
+Pillow
+pybind11
