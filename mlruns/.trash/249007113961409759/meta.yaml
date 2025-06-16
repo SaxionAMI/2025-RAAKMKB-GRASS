@@ -1,7 +1,0 @@
-artifact_location: mlflow-artifacts:/249007113961409759
-creation_time: 1749025484621
-experiment_id: '249007113961409759'
-last_update_time: 1749030662954
-lifecycle_stage: deleted
-name: CrowdSentimentClassification
-tags: {}
