@@ -1,0 +1,15 @@
+artifact_uri: mlflow-artifacts:/538514350423812025/6d5ba83695ac44c3b077f6eeccab5d19/artifacts
+end_time: 1749035285384
+entry_point_name: ''
+experiment_id: '538514350423812025'
+lifecycle_stage: active
+run_id: 6d5ba83695ac44c3b077f6eeccab5d19
+run_name: victorious-quail-127
+run_uuid: 6d5ba83695ac44c3b077f6eeccab5d19
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1749035285190
+status: 3
+tags: []
+user_id: Gebruiker

@@ -1,0 +1,16 @@
+artifact_uri: mlflow-artifacts:/249007113961409759/3e742aba1f8f4e4e94401a409f07f6cd/artifacts
+deleted_time: 1749030662954
+end_time: 1749026297598
+entry_point_name: ''
+experiment_id: '249007113961409759'
+lifecycle_stage: deleted
+run_id: 3e742aba1f8f4e4e94401a409f07f6cd
+run_name: flawless-chimp-939
+run_uuid: 3e742aba1f8f4e4e94401a409f07f6cd
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1749025989030
+status: 4
+tags: []
+user_id: Gebruiker

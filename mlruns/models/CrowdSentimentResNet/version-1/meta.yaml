@@ -1,0 +1,14 @@
+aliases: []
+creation_timestamp: 1749029996881
+current_stage: None
+description: ''
+last_updated_timestamp: 1749029996881
+name: CrowdSentimentResNet
+run_id: 5c8aa3ef20a04e0ca92acf13f85cf441
+run_link: ''
+source: mlflow-artifacts:/896406965569908368/5c8aa3ef20a04e0ca92acf13f85cf441/artifacts/model
+status: READY
+status_message: null
+storage_location: mlflow-artifacts:/896406965569908368/5c8aa3ef20a04e0ca92acf13f85cf441/artifacts/model
+user_id: null
+version: 1

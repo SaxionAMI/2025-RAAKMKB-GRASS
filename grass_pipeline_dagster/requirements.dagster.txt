@@ -1,0 +1,17 @@
+dagster
+dagster-webserver
+mlflow==2.12.1
+torch
+torchvision
+pandas
+numpy
+scikit-learn
+seaborn
+matplotlib
+Pillow
+soundfile
+pybind11
+minio
+boto3
+influxdb-client
+torchaudio
