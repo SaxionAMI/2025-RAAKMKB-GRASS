@@ -11,6 +11,7 @@ from datetime import datetime
 from dagster import asset, get_dagster_logger
 from influxdb_client import Point
 from influxdb_client.client.write_api import SYNCHRONOUS
+from time import perf_counter  # ⬅️ Added for latency measurement
 
 from grass_pipeline_dagster.utils import (
     load_settings,
@@ -101,9 +102,14 @@ def log_segment_predictions():
     logger.info("Running inference and logging predictions to InfluxDB")
     with torch.no_grad():
         for image, true_label, img_path in dataloader:
+            start_time = perf_counter()  # ⏱ Start timer
+
             outputs = model(image)
             probs = F.softmax(outputs, dim=1)
             confidence, pred = torch.max(probs, 1)
+
+            end_time = perf_counter()  # ⏱ End timer
+            inference_latency = end_time - start_time  # seconds
 
             pred_label = dataset.inverse_label_map[pred.item()]
             true_label_name = dataset.inverse_label_map[true_label.item()]
@@ -115,6 +121,7 @@ def log_segment_predictions():
                 .tag("true_label", true_label_name)
                 .field("confidence", confidence_score)
                 .field("segment_path", img_path[0])
+                .field("inference_latency", inference_latency)  # ⬅️ Added latency
                 .time(datetime.utcnow())
             )
 
