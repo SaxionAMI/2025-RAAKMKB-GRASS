@@ -32,7 +32,7 @@ def predict_manual(input: ManualInput):
         return JSONResponse(content={"error": f"Manual path not found: {path}"}, status_code=404)
 
     try:
-        label = classify_audio(path)  # ← now uses sliding window averaging internally
+        label = classify_audio(path)
         print("🎯 Manual predicted:", label)
         return JSONResponse(content={"label": label})
     except Exception as e:
@@ -51,7 +51,7 @@ async def predict(request: Request):
     print("🔥 Received payload:", payload)
     sys.stdout.flush()
 
-    # === Direct audio_path use ===
+    # === Direct audio_path use (manual/debug) ===
     if "audio_path" in payload:
         path = payload["audio_path"]
         print("🛠️ Manual mode path:", path)
@@ -71,7 +71,9 @@ async def predict(request: Request):
 
     # === Label Studio task-based inference ===
     results = []
-    label_studio_media_root = os.path.join(os.getcwd(), "label_studio_data", "media")
+
+    # This matches the volume mount for BOTH containers: ./label_studio_data:/data
+    shared_media_root = "/data/media"
     tasks = payload.get("tasks", [])
 
     if not tasks:
@@ -81,11 +83,11 @@ async def predict(request: Request):
     for idx, task in enumerate(tasks):
         print(f"🔄 Processing task {idx} with ID {task.get('id')}")
         relative_audio_path = task["data"].get("audio", "").lstrip("/")
-
+        # Remove leading "data/" if present, so we join below (LS always gives `/data/upload/...`)
         if relative_audio_path.startswith("data/"):
             relative_audio_path = relative_audio_path[len("data/"):]
-
-        local_path = os.path.join(label_studio_media_root, *relative_audio_path.split("/"))
+        # Now reconstruct full path under /data/media/...
+        local_path = os.path.join(shared_media_root, *relative_audio_path.split("/")[1:])
         print(f"🔍 Final resolved path: {local_path}")
         sys.stdout.flush()
 
@@ -106,9 +108,7 @@ async def predict(request: Request):
                 "from_name": "global_sentiment",
                 "to_name": "audio",
                 "type": "choices",
-                "value": {
-                    "choices": [label]
-                }
+                "value": {"choices": [label]}
             }],
             "score": 1.0,
             "model_version": "v1.0",
