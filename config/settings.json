@@ -4,5 +4,6 @@
   "segment_duration": 1.0,
   "segment_overlap": 0.25,
   "model_path": "dagster_output/model/cnn_model.pth",
-  "class_labels": ["Approval", "Disapproval", "Neutral"]
+  "class_labels": ["Approval", "Disapproval", "Neutral"],
+  "force_retrain": true
 }
