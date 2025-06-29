@@ -91,4 +91,14 @@ services:
       - ./label_studio_data:/data
       - ./label_studio_data:/label-studio/data
     restart: unless-stopped
-
+  grafana: 
+    image: grafana/grafana:10.3.3
+    container_name: grafana
+    ports:
+      - "33000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./grafana_data:/var/lib/grafana
+    depends_on:
+      - influxdb

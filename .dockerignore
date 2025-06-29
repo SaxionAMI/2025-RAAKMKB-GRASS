@@ -15,7 +15,7 @@ venv/
 *.bak
 *.swp
 
-# === Output folders (do not bake into image) ===
+# === Output folders ===
 dagster_output/
 dagster_home/
 mlruns/
