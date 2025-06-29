@@ -1,8 +1,11 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import os
 import sys
+import tempfile
+import yaml
+import subprocess
 
 # Updated classifier with sliding window logic inside
 from api.audio_classifier import classify_audio
@@ -17,7 +20,6 @@ def health_check():
 def setup():
     return {"status": "setup complete"}
 
-# === Manual Swagger UI Testing Input ===
 class ManualInput(BaseModel):
     audio_path: str
 
@@ -39,7 +41,6 @@ def predict_manual(input: ManualInput):
         print("❌ Error in manual classification:", e)
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
-# === Label Studio Inference Format ===
 @app.post("/predict")
 async def predict(request: Request):
     try:
@@ -69,11 +70,10 @@ async def predict(request: Request):
             print("❌ Error in manual classification:", e)
             return JSONResponse(content={"error": str(e)}, status_code=500)
 
-    # === Label Studio task-based inference ===
     results = []
 
-    # This matches the volume mount for BOTH containers: ./label_studio_data:/data
-    shared_media_root = "/data/media"
+    # This is your Docker mount point for both containers:
+    MOUNT_ROOT = "/data"
     tasks = payload.get("tasks", [])
 
     if not tasks:
@@ -82,22 +82,41 @@ async def predict(request: Request):
 
     for idx, task in enumerate(tasks):
         print(f"🔄 Processing task {idx} with ID {task.get('id')}")
-        relative_audio_path = task["data"].get("audio", "").lstrip("/")
-        # Remove leading "data/" if present, so we join below (LS always gives `/data/upload/...`)
-        if relative_audio_path.startswith("data/"):
-            relative_audio_path = relative_audio_path[len("data/"):]
-        # Now reconstruct full path under /data/media/...
-        local_path = os.path.join(shared_media_root, *relative_audio_path.split("/")[1:])
-        print(f"🔍 Final resolved path: {local_path}")
+        original_audio_path = task["data"].get("audio", "").replace("\\", "/")
+        if not original_audio_path:
+            print(f"❌ No 'audio' field in task {idx}")
+            return JSONResponse(content={"error": f"No audio field for task {task.get('id')}"}, status_code=400)
+
+        # Remove leading slash and "data/" if present, then always join with /data root
+        rel_path = original_audio_path.lstrip("/")
+        if rel_path.startswith("data/"):
+            rel_path = rel_path[5:]  # strip "data/"
+        local_path = os.path.join(MOUNT_ROOT, rel_path)
+
+        # Try various path combinations to resolve audio file
+        found_path = None
+        candidate_paths = [
+            local_path,
+            original_audio_path,
+            os.path.join(MOUNT_ROOT, "media", rel_path),
+            os.path.join(MOUNT_ROOT, "upload", rel_path),
+            os.path.join(MOUNT_ROOT, rel_path.lstrip("media/")),
+            os.path.join(MOUNT_ROOT, rel_path.lstrip("upload/")),
+        ]
+        for candidate in candidate_paths:
+            if os.path.exists(candidate):
+                found_path = candidate
+                break
+        if not found_path:
+            print(f"❌ File not found (tried): {candidate_paths}")
+            return JSONResponse(content={"error": f"Audio file not found: {candidate_paths}"}, status_code=404)
+
+        print(f"🔍 Final resolved path: {found_path}")
         sys.stdout.flush()
 
-        if not os.path.exists(local_path):
-            print("❌ File not found:", local_path)
-            return JSONResponse(content={"error": f"Audio file not found: {local_path}"}, status_code=404)
-
         try:
-            print("🧪 classify_audio called with:", local_path)
-            label = classify_audio(local_path)
+            print("🧪 classify_audio called with:", found_path)
+            label = classify_audio(found_path)
             print("✅ classify_audio returning:", label)
         except Exception as e:
             print(f"❌ Error classifying task {task.get('id')}:", e)
@@ -127,3 +146,81 @@ async def predict(request: Request):
     print("✅ Final response:", result_payload)
     sys.stdout.flush()
     return JSONResponse(content=result_payload)
+
+
+@app.post("/train")
+async def train(request: Request, background_tasks: BackgroundTasks):
+    try:
+        payload = await request.json()
+        print("🔥 Received training payload:", payload)
+        sys.stdout.flush()
+    except Exception as e:
+        print("❌ Failed to parse JSON:", e)
+        return JSONResponse(content={"error": "Invalid JSON payload."}, status_code=400)
+
+    # Extract annotation and task info from Label Studio payload
+    annotation = payload.get("annotation")
+    task = payload.get("task")
+
+    if not annotation or not task:
+        print("❌ Missing annotation or task in payload")
+        return JSONResponse(content={"error": "Missing annotation or task in payload"}, status_code=400)
+
+    audio_path = task.get("data", {}).get("audio")
+    label = None
+    # Defensive extraction of label from annotation results
+    results = annotation.get("result", [])
+    if results:
+        label = results[0].get("value", {}).get("choices", [None])[0]
+
+    if not audio_path or not label:
+        print("❌ Missing audio path or label in annotation")
+        return JSONResponse(content={"error": "Missing audio path or label in annotation"}, status_code=400)
+
+    print(f"🎯 Incremental training triggered for audio: {audio_path} with label: {label}")
+
+    def run_training_job():
+        try:
+            # Create temporary config file for Dagster job with annotation data
+            with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tmp_config:
+                config_dict = {
+                    "ops": {
+                        "run_ls_segment_audios": {
+                            "config": {
+                                "audio_path": audio_path,
+                                "label": label
+                            }
+                        },
+                    }
+                }
+                yaml.dump(config_dict, tmp_config)
+                tmp_config_path = tmp_config.name
+
+            print(f"🚀 Launching Dagster LS training job with config: {tmp_config_path}")
+            subprocess.run([
+                "dagster", "job", "execute",
+                "-f", "grass_pipeline_dagster/grass_pipeline_dagster/Label_Studio_Training/jobs_ls.py",
+                "-j", "ls_training_job",
+                "-c", tmp_config_path
+            ], check=True)
+            print("✅ Training job triggered.")
+            sys.stdout.flush()
+
+        except Exception as e:
+            print(f"❌ Failed to launch Dagster job: {e}")
+
+        finally:
+            # Cleanup temp file
+            try:
+                os.remove(tmp_config_path)
+            except Exception:
+                pass
+
+    background_tasks.add_task(run_training_job)
+
+    return JSONResponse({"status": "Incremental training started"}, status_code=200)
+
+@app.post("/webhook")
+async def webhook(request: Request, background_tasks: BackgroundTasks):
+    # Alias /webhook to /train to handle LS training webhooks uniformly
+    return await train(request, background_tasks)

@@ -19,7 +19,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # === Import internal modules ===
-from grass_pipeline_dagster.utils import load_settings
+from grass_pipeline_dagster.utils import load_settings, get_minio_client
 from cpp_processing.segmenter import segment_audio
 from grass_pipeline_dagster.audio_utils.segmentation import compute_spectrogram
 
@@ -39,14 +39,45 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=False)
 model.fc = torch.nn.Linear(model.fc.in_features, len(class_labels))
 
-try:
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    model.to(device)
-    model.eval()
-    print(f"✅ Loaded model from: {model_path}")
-except Exception as e:
-    raise RuntimeError(f"❌ Failed to load model: {e}")
+def try_load_from_minio():
+    """
+    Try to download and load the latest LS model from MinIO.
+    Returns True if successful, False otherwise.
+    """
+    minio_bucket = "grass-pipeline"
+    minio_object = "models/ls/latest/ls_cnn_model.pth"
+    client = get_minio_client()
+    with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as tmp_file:
+        try:
+            client.download_file(minio_bucket, minio_object, tmp_file.name)
+            print(f"✅ Downloaded model from MinIO: {minio_bucket}/{minio_object}")
+            state_dict = torch.load(tmp_file.name, map_location=device)
+            model.load_state_dict(state_dict)
+            model.to(device)
+            model.eval()
+            print(f"✅ Loaded LS model from MinIO.")
+            return True
+        except Exception as e:
+            print(f"⚠️ Could not load model from MinIO: {e}")
+            return False
+        finally:
+            tmp_file.close()
+            try:
+                os.remove(tmp_file.name)
+            except Exception:
+                pass
 
+# --- Try MinIO first, fallback to local path ---
+if not try_load_from_minio():
+    try:
+        print(f"ℹ️ Falling back to local model: {model_path}")
+        state_dict = torch.load(model_path, map_location=device)
+        model.load_state_dict(state_dict)
+        model.to(device)
+        model.eval()
+        print(f"✅ Loaded model from: {model_path}")
+    except Exception as e:
+        raise RuntimeError(f"❌ Failed to load model from MinIO and local: {e}")
 
 def classify_audio(audio_path: str, window_size: int = 3, stride: int = 1) -> str:
     print("🧪 classify_audio (sliding window) called with:", audio_path)

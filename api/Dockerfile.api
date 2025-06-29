@@ -12,9 +12,9 @@ RUN apt-get update && apt-get install -y \
     pybind11-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Install Python dependencies
+# 2. Install Python dependencies including Dagster
 COPY grass_pipeline_dagster/requirements.dagster.txt ./requirements.txt
-RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt dagster dagster-webserver
 
 # 3. Copy API code as a package
 COPY api /app/api

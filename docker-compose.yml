@@ -15,6 +15,7 @@ services:
       - ./dagster_home:/app/dagster_home
       - ./mlflow:/mlflow
       - ./mlflow/artifacts:/app/mlartifacts
+      - ./label_studio_data:/data
     command: ["dagster", "dev", "-h", "0.0.0.0", "-p", "3000", "-f", "grass_pipeline_dagster/grass_pipeline_dagster/definitions.py"]
 
   mlflow:
@@ -69,12 +70,15 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      - ./dagster_home:/app/dagster_home
       - ./dagster_output:/app/dagster_output
       - ./config:/app/config
       - ./grass_pipeline_dagster:/app/grass_pipeline_dagster
-      - ./label_studio_data:/app/label_studio_data
+      - ./api:/app/api
+      - ./label_studio_data:/data
     environment:
       - PYTHONPATH=/app:/app/grass_pipeline_dagster
+      - DAGSTER_HOME=/app/dagster_home
     restart: unless-stopped
     command: ["uvicorn", "api.predict_api:app", "--host", "0.0.0.0", "--port", "8000"]
 
