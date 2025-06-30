@@ -24,6 +24,7 @@ mlartifacts/
 mlruns/
 label_studio_data/
 influxdb_data/
+grafana_data/
 # Ignore mlruns and dagster_output directories
 /grass_pipeline_dagster/mlruns/
 /grass_pipeline_dagster/dagster_output/
