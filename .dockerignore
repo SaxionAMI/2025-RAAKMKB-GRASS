@@ -26,6 +26,8 @@ output_logs/
 audio_input/
 minio_storage/
 vcpkg/
+grafana_data/
+
 
 # === Inside grass_pipeline_dagster ===
 grass_pipeline_dagster/dagster_output/

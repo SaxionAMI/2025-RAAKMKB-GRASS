@@ -54,15 +54,15 @@ def evaluate_model() -> dict:
     try:
         test_csv = os.path.join(tempfile.gettempdir(), "test_eval.csv")
         client.download_file(minio_bucket, minio_test_object, test_csv)
-        logger.info(f"✅ Loaded test.csv from MinIO: {minio_test_object}")
+        logger.info(f"Loaded test.csv from MinIO: {minio_test_object}")
     except Exception as e:
-        logger.warning(f"⚠️ Could not load test.csv from MinIO: {e}")
+        logger.warning(f"Could not load test.csv from MinIO: {e}")
         local_fallback = os.path.join(os.getcwd(), "dagster_output", "dataset", "test.csv")
         if os.path.exists(local_fallback):
             test_csv = local_fallback
-            logger.info(f"✅ Using fallback local test.csv: {test_csv}")
+            logger.info(f"Using fallback local test.csv: {test_csv}")
         else:
-            logger.error("❌ No test.csv found in MinIO or locally. Evaluation aborted.")
+            logger.error("No test.csv found in MinIO or locally. Evaluation aborted.")
             raise FileNotFoundError("Test CSV not found in MinIO or local path.")
 
     # === Prepare Dataset ===
@@ -84,17 +84,17 @@ def evaluate_model() -> dict:
         temp_model_path = os.path.join(tempfile.gettempdir(), "cnn_model_eval.pth")
         client.download_file(minio_bucket, minio_model_object, temp_model_path)
         model.load_state_dict(torch.load(temp_model_path, map_location=device))
-        logger.info(f"✅ Loaded model from MinIO: {minio_model_object}")
+        logger.info(f"Loaded model from MinIO: {minio_model_object}")
         model_loaded = True
     except Exception as e:
-        logger.warning(f"⚠️ Could not load model from MinIO: {e}")
+        logger.warning(f"Could not load model from MinIO: {e}")
         local_model_path = os.path.join(os.getcwd(), "dagster_output", "model", "cnn_model.pth")
         if os.path.exists(local_model_path):
             model.load_state_dict(torch.load(local_model_path, map_location=device))
-            logger.info(f"✅ Loaded model from local path: {local_model_path}")
+            logger.info(f"Loaded model from local path: {local_model_path}")
             model_loaded = True
         else:
-            logger.error("❌ No trained model found locally or in MinIO. Evaluation aborted.")
+            logger.error("No trained model found locally or in MinIO. Evaluation aborted.")
             raise FileNotFoundError("Trained model not found in MinIO or local path.")
 
     model.eval()
@@ -169,7 +169,7 @@ def evaluate_model() -> dict:
     )
 
     write_api.write(bucket="predictions", org="grass", record=point)
-    logger.info("✅ Logged evaluation metrics to InfluxDB.")
+    logger.info("Logged evaluation metrics to InfluxDB.")
 
     return {
         "accuracy": acc,

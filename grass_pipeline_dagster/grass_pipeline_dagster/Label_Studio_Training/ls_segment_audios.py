@@ -12,21 +12,19 @@ from cpp_processing.spectrogram import compute_spectrogram
 from grass_pipeline_dagster.utils import load_settings
 
 
-AUDIO_BASE = Path("/data/media/upload/1")  # <- Single source of truth for all lookups
+AUDIO_BASE = Path("/data/media/upload/1")
+
 
 def resolve_audio_path(input_path):
     """
     Always resolves the real, container-accessible path for an audio file,
     given any Label Studio or API-supplied path.
     """
-    # Handle if input_path is a Path object or string
     input_path = Path(input_path)
     fname = input_path.name
-    # Compose full path
     true_path = AUDIO_BASE / fname
     if true_path.exists():
         return true_path
-    # If not found, as a fallback, try absolute
     if input_path.is_absolute() and input_path.exists():
         return input_path
     raise FileNotFoundError(f"Audio file not found at: {true_path}")
@@ -48,33 +46,23 @@ def ls_segment_audios():
     segment_duration = float(settings["segment_duration"])
     segment_overlap = float(settings["segment_overlap"])
 
-    # Only consider .json files that are NOT -info.json
     export_files = sorted(
         [f for f in LS_EXPORT_DIR.glob("*.json") if not str(f).endswith("-info.json")],
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
     if not export_files:
-        logger.error("No LS task export files found in /data/export/ (skipping -info.json files)")
+        logger.error("No LS task export files found in /data/export/")
         return
-    export_path = export_files[0]
 
-    # --- Robust LS export loading (list or dict) ---
+    export_path = export_files[0]
     with open(export_path, "r") as f:
         ls_data = json.load(f)
     logger.info(f"Using LS export: {export_path}")
 
+    tasks = []
     if isinstance(ls_data, dict):
-        # For future-proofing, also check "tasks" or search for first list value
-        tasks = ls_data.get("tasks")
-        if not tasks:
-            for v in ls_data.values():
-                if isinstance(v, list):
-                    tasks = v
-                    break
-        if not tasks:
-            logger.error("No tasks found in LS export dict.")
-            return
+        tasks = ls_data.get("tasks") or next((v for v in ls_data.values() if isinstance(v, list)), [])
     elif isinstance(ls_data, list):
         tasks = ls_data
     else:
@@ -90,17 +78,16 @@ def ls_segment_audios():
             logger.warning(f"Skipping task due to missing fields: {e}")
             continue
 
-        # Use our robust resolver (no more AUDIO_BASES list)
         try:
             audio_path = resolve_audio_path(audio_rel_path)
         except FileNotFoundError as e:
-            logger.warning(f"Audio file does not exist for {audio_rel_path.name}: {e}")
+            logger.warning(f"Audio file not found: {e}")
             continue
 
         out_folder = LS_SPECTROGRAM_DIR / label
         out_folder.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"🎧 Processing LS-labeled audio: {audio_path} → label={label}")
+        logger.info(f"Processing LS-labeled audio: {audio_path} → label={label}")
 
         try:
             if audio_path.suffix.lower() == ".mp3":
@@ -111,11 +98,11 @@ def ls_segment_audios():
                 if audio_np.ndim > 1:
                     audio_np = audio_np[:, 0]
         except Exception as e:
-            logger.warning(f"⚠️ Failed to read {audio_path}: {e}")
+            logger.warning(f"Failed to read {audio_path}: {e}")
             continue
 
         segments = segment_audio(audio_np, sample_rate, segment_duration, segment_overlap)
-        logger.info(f"✂️ {len(segments)} segments created for {audio_path}")
+        logger.info(f"{len(segments)} segments created for {audio_path}")
 
         for seg_index, segment in enumerate(segments):
             segment = (segment - np.mean(segment)).astype(np.float32)
@@ -148,27 +135,27 @@ def ls_segment_audios():
             del log_spec, spec, segment
             gc.collect()
 
-    logger.info("✅ LS-driven segmentation asset complete! All outputs in label_studio/spectrogram_images/.")
+    logger.info("LS-driven segmentation asset complete! All outputs in label_studio/spectrogram_images/.")
 
 
-def ls_segment_audios_incremental(audio_path: str, label: str):
+def ls_segment_audios_incremental(audio_path: str, label: str) -> list[tuple[str, str]]:
     """
     Segment a single audio file with a given label,
-    generate spectrogram images, and save them.
+    generate spectrogram images, and return list of (path, label).
     """
     logger = get_dagster_logger()
     LS_SPECTROGRAM_DIR = Path("/app/dagster_output/label_studio/spectrogram_images")
-    
+    segment_paths = []
+
     settings = load_settings()
     segment_duration = float(settings["segment_duration"])
     segment_overlap = float(settings["segment_overlap"])
 
-    # Always resolve to /data/media/upload/1/filename.ext
     try:
         audio_path = resolve_audio_path(audio_path)
     except FileNotFoundError as e:
-        logger.error(f"⚠️ {e}")
-        return
+        logger.error(f"{e}")
+        return []
 
     out_folder = LS_SPECTROGRAM_DIR / label.lower()
     out_folder.mkdir(parents=True, exist_ok=True)
@@ -183,11 +170,11 @@ def ls_segment_audios_incremental(audio_path: str, label: str):
             if audio_np.ndim > 1:
                 audio_np = audio_np[:, 0]
     except Exception as e:
-        logger.error(f"⚠️ Failed to read {audio_path}: {e}")
-        return
+        logger.error(f"Failed to read {audio_path}: {e}")
+        return []
 
     segments = segment_audio(audio_np, sample_rate, segment_duration, segment_overlap)
-    logger.info(f"✂️ {len(segments)} segments created for {audio_path}")
+    logger.info(f"{len(segments)} segments created for {audio_path}")
 
     for seg_index, segment in enumerate(segments):
         segment = (segment - np.mean(segment)).astype(np.float32)
@@ -215,10 +202,11 @@ def ls_segment_audios_incremental(audio_path: str, label: str):
         plt.savefig(image_path, bbox_inches="tight", pad_inches=0)
         plt.close()
 
-        logger.info(f"📸 LS: Saved spectrogram image: {image_path}")
+        logger.info(f"LS: Saved spectrogram image: {image_path}")
+        segment_paths.append((str(image_path), label.lower()))
 
         del log_spec, spec, segment
         gc.collect()
 
-    logger.info(f"✅ Incremental segmentation complete for: {audio_path}")
-
+    logger.info(f"Incremental segmentation complete for: {audio_path}")
+    return segment_paths

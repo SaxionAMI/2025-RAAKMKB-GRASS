@@ -50,15 +50,15 @@ def try_load_from_minio():
     with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as tmp_file:
         try:
             client.download_file(minio_bucket, minio_object, tmp_file.name)
-            print(f"✅ Downloaded model from MinIO: {minio_bucket}/{minio_object}")
+            print(f"Downloaded model from MinIO: {minio_bucket}/{minio_object}")
             state_dict = torch.load(tmp_file.name, map_location=device)
             model.load_state_dict(state_dict)
             model.to(device)
             model.eval()
-            print(f"✅ Loaded LS model from MinIO.")
+            print(f"Loaded LS model from MinIO.")
             return True
         except Exception as e:
-            print(f"⚠️ Could not load model from MinIO: {e}")
+            print(f"Could not load model from MinIO: {e}")
             return False
         finally:
             tmp_file.close()
@@ -70,17 +70,17 @@ def try_load_from_minio():
 # --- Try MinIO first, fallback to local path ---
 if not try_load_from_minio():
     try:
-        print(f"ℹ️ Falling back to local model: {model_path}")
+        print(f"Falling back to local model: {model_path}")
         state_dict = torch.load(model_path, map_location=device)
         model.load_state_dict(state_dict)
         model.to(device)
         model.eval()
-        print(f"✅ Loaded model from: {model_path}")
+        print(f"Loaded model from: {model_path}")
     except Exception as e:
-        raise RuntimeError(f"❌ Failed to load model from MinIO and local: {e}")
+        raise RuntimeError(f"Failed to load model from MinIO and local: {e}")
 
 def classify_audio(audio_path: str, window_size: int = 3, stride: int = 1) -> str:
-    print("🧪 classify_audio (sliding window) called with:", audio_path)
+    print("classify_audio (sliding window) called with:", audio_path)
 
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
@@ -101,10 +101,10 @@ def classify_audio(audio_path: str, window_size: int = 3, stride: int = 1) -> st
     audio_np /= (np.std(audio_np) + 1e-8)
 
     segments = segment_audio(audio_np, sample_rate, segment_duration, segment_overlap)
-    print(f"✂️ {len(segments)} segments created")
+    print(f"{len(segments)} segments created")
 
     if len(segments) == 0:
-        raise RuntimeError("❌ No segments available after segmentation")
+        raise RuntimeError("No segments available after segmentation")
 
     segment_probs = []
 
@@ -144,7 +144,7 @@ def classify_audio(audio_path: str, window_size: int = 3, stride: int = 1) -> st
                 os.remove(image_path)
 
     if not segment_probs:
-        raise RuntimeError("❌ No segment predictions")
+        raise RuntimeError("No segment predictions")
 
     # === Sliding window averaging ===
     window_predictions = []
@@ -168,5 +168,5 @@ def classify_audio(audio_path: str, window_size: int = 3, stride: int = 1) -> st
         final_scores[label] /= len(window_predictions)
 
     final_label = max(final_scores, key=final_scores.get)
-    print(f"✅ Final label (sliding window avg): {final_label.capitalize()}")
+    print(f"Final label (sliding window avg): {final_label.capitalize()}")
     return final_label.capitalize()

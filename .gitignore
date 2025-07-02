@@ -1,30 +1,39 @@
-# Ignore Python bytecode
+# === Python bytecode ===
 __pycache__/
 *.py[cod]
 
-# Ignore large data files
+# === Virtual Environments ===
+.env
+venv/
+
+# === Logs, outputs, and generated data ===
+*.log
+*.csv
+*.joblib
+*.pth
+*.pt
+
+# === Output directories ===
 dagster_home/
 dagster_output/
-*.csv
-*.log
-
-# Ignore environment directories
-venv/
-audio_input/
-output_logs/
-minio_storage/
-vcpkg/
-
-# Ignore IDE or editor specific files
-.vscode/
-
-# Ignore ML-related directories and files
 mlflow/
 mlartifacts/
 mlruns/
 label_studio_data/
+audio_input/
+output_logs/
+minio_storage/
 influxdb_data/
 grafana_data/
-# Ignore mlruns and dagster_output directories
+vcpkg/
+
+# === Project-specific nested output ===
 /grass_pipeline_dagster/mlruns/
 /grass_pipeline_dagster/dagster_output/
+
+# === IDE/editor config ===
+.vscode/
+
+# === System-specific ===
+.DS_Store
+Thumbs.db

@@ -13,15 +13,15 @@ std::vector<std::vector<float>> segment_and_compute_spectrogram(
     int fft_size,
     int hop_length
 ) {
-    std::cout << "🧪 C++ MODULE INVOKED! (debug trace)" << std::endl;
+    std::cout << "C++ MODULE INVOKED! (debug trace)" << std::endl;
 
     int window_samples = static_cast<int>(window_sec * sample_rate);   // e.g. 44100
     int hop_samples = static_cast<int>(hop_sec * sample_rate);         // e.g. 11025
     int num_segments = (audio.size() - window_samples) / hop_samples + 1;
 
-    std::cout << "🔍 Total audio samples: " << audio.size() << std::endl;
-    std::cout << "🔍 Window samples: " << window_samples << " | Hop samples: " << hop_samples << std::endl;
-    std::cout << "🔍 Calculated number of segments: " << num_segments << std::endl;
+    std::cout << " Total audio samples: " << audio.size() << std::endl;
+    std::cout << " Window samples: " << window_samples << " | Hop samples: " << hop_samples << std::endl;
+    std::cout << " Calculated number of segments: " << num_segments << std::endl;
 
     std::vector<std::vector<float>> all_specs;
 
@@ -57,7 +57,7 @@ std::vector<std::vector<float>> segment_and_compute_spectrogram(
             ++frame_count;
         }
 
-        std::cout << "🧩 Segment " << seg
+        std::cout << " Segment " << seg
                   << ": size=" << segment.size()
                   << ", FFT frames=" << frame_count
                   << ", total values=" << magnitudes.size() << std::endl;

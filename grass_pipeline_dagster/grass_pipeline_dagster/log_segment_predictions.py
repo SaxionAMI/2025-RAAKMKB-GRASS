@@ -11,7 +11,7 @@ from datetime import datetime
 from dagster import asset, get_dagster_logger
 from influxdb_client import Point
 from influxdb_client.client.write_api import SYNCHRONOUS
-from time import perf_counter  # ⬅️ Added for latency measurement
+from time import perf_counter  
 
 from grass_pipeline_dagster.utils import (
     load_settings,
@@ -58,15 +58,15 @@ def log_segment_predictions():
     try:
         test_csv = os.path.join(tempfile.gettempdir(), "test_log.csv")
         client.download_file(minio_bucket, minio_test_key, test_csv)
-        logger.info(f"✅ Loaded test.csv from MinIO: {minio_test_key}")
+        logger.info(f"Loaded test.csv from MinIO: {minio_test_key}")
     except Exception as e:
-        logger.warning(f"⚠️ Could not load test.csv from MinIO: {e}")
+        logger.warning(f"Could not load test.csv from MinIO: {e}")
         fallback_csv = os.path.join(os.getcwd(), "dagster_output", "dataset", "test.csv")
         if os.path.exists(fallback_csv):
             test_csv = fallback_csv
-            logger.info(f"✅ Using fallback local test.csv: {test_csv}")
+            logger.info(f"Using fallback local test.csv: {test_csv}")
         else:
-            logger.error("❌ No test.csv found in MinIO or locally. Aborting.")
+            logger.error("No test.csv found in MinIO or locally. Aborting.")
             raise FileNotFoundError("test.csv not found.")
 
     transform = transforms.Compose([
@@ -80,15 +80,15 @@ def log_segment_predictions():
     try:
         model_path = os.path.join(tempfile.gettempdir(), "cnn_model_predict.pth")
         client.download_file(minio_bucket, minio_model_key, model_path)
-        logger.info(f"✅ Loaded model from MinIO: {minio_model_key}")
+        logger.info(f"Loaded model from MinIO: {minio_model_key}")
     except Exception as e:
-        logger.warning(f"⚠️ Could not load model from MinIO: {e}")
+        logger.warning(f"Could not load model from MinIO: {e}")
         fallback_model = os.path.join(os.getcwd(), "dagster_output", "model", "cnn_model.pth")
         if os.path.exists(fallback_model):
             model_path = fallback_model
-            logger.info(f"✅ Using fallback local model: {model_path}")
+            logger.info(f"Using fallback local model: {model_path}")
         else:
-            logger.error("❌ No trained model found in MinIO or locally. Aborting.")
+            logger.error("No trained model found in MinIO or locally. Aborting.")
             raise FileNotFoundError("Model not found.")
 
     model = models.resnet18(pretrained=False)
@@ -121,10 +121,10 @@ def log_segment_predictions():
                 .tag("true_label", true_label_name)
                 .field("confidence", confidence_score)
                 .field("segment_path", img_path[0])
-                .field("inference_latency", inference_latency)  # ⬅️ Added latency
+                .field("inference_latency", inference_latency) 
                 .time(datetime.utcnow())
             )
 
             write_api.write(bucket="predictions", org="grass", record=point)
 
-    logger.info("✅ Logged all segment-level predictions to InfluxDB.")
+    logger.info("Logged all segment-level predictions to InfluxDB.")

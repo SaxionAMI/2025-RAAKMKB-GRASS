@@ -9,7 +9,7 @@ from grass_pipeline_dagster.audio_utils.segmentation import segment_audio_files
 @asset
 def segmented_spectrograms():
     logger = get_dagster_logger()
-    logger.info("🔁 Running segmented_spectrograms()")
+    logger.info("Running segmented_spectrograms()")
 
     # Load settings
     settings = load_settings()
@@ -33,7 +33,7 @@ def segmented_spectrograms():
 @asset
 def segment_new_audio():
     logger = get_dagster_logger()
-    logger.info("🔍 Running segment_new_audio() with detailed MinIO check")
+    logger.info("Running segment_new_audio() with detailed MinIO check")
 
     # Load settings and initialize MinIO
     settings = load_settings()
@@ -46,10 +46,10 @@ def segment_new_audio():
     audio_files = [f for f in audio_files if f.lower().endswith(('.wav', '.mp3'))]
 
     if not audio_files:
-        logger.warning(f"⚠️ No audio files found in input_dir: {input_dir}")
+        logger.warning(f"No audio files found in input_dir: {input_dir}")
         return "No audio files found."
 
-    logger.info(f"📁 Found {len(audio_files)} audio files to check")
+    logger.info(f"Found {len(audio_files)} audio files to check")
     new_files = []
 
     for audio_path in audio_files:
@@ -63,22 +63,22 @@ def segment_new_audio():
         if "Contents" in response:
             matched_keys = [obj["Key"] for obj in response["Contents"]]
 
-        logger.debug(f"🔍 Checking prefix: {minio_prefix}")
-        logger.debug(f"🔍 Matched MinIO keys: {matched_keys}")
+        logger.debug(f"Checking prefix: {minio_prefix}")
+        logger.debug(f"Matched MinIO keys: {matched_keys}")
 
         if not matched_keys:
-            logger.info(f"🆕 New audio detected: {audio_path}")
+            logger.info(f"New audio detected: {audio_path}")
             new_files.append(audio_path)
         else:
-            logger.debug(f"✅ Already segmented: {audio_path} → Found {len(matched_keys)} segment(s)")
+            logger.debug(f"Already segmented: {audio_path} → Found {len(matched_keys)} segment(s)")
 
-    logger.info(f"📊 {len(new_files)} new audio file(s) found for segmentation")
+    logger.info(f" {len(new_files)} new audio file(s) found for segmentation")
 
     if not new_files:
-        logger.info("✅ No new audio files to segment.")
+        logger.info("No new audio files to segment.")
         return "No new files found."
 
-    logger.info("📄 List of new audio files:")
+    logger.info("List of new audio files:")
     for path in new_files:
         logger.info(f"   • {path}")
 

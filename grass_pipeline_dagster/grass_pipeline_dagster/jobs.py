@@ -20,40 +20,40 @@ def run_segmentation(context: OpExecutionContext) -> str:
 @op
 def run_prepare_dataset(context: OpExecutionContext, result: str) -> bool:
     if "Segmented" in result and "0 new files" not in result:
-        context.log.info("✅ New data found — proceeding with dataset preparation.")
+        context.log.info("New data found — proceeding with dataset preparation.")
         prepare_dataset()
         return True
     else:
-        context.log.info("⏭️ No new data — skipping prepare_dataset.")
+        context.log.info("No new data — skipping prepare_dataset.")
         return False
 
 @op
 def run_train_model(context: OpExecutionContext, should_train: bool) -> bool:
     if should_train:
-        context.log.info("🎯 Proceeding with model training.")
+        context.log.info("Proceeding with model training.")
         train_model()
         return True
     else:
-        context.log.info("⏭️ Skipping training step.")
+        context.log.info("Skipping training step.")
         return False
 
 @op
 def run_evaluate_model(context: OpExecutionContext, should_evaluate: bool) -> bool:
     if should_evaluate:
-        context.log.info("📊 Proceeding with evaluation step.")
+        context.log.info("Proceeding with evaluation step.")
         evaluate_model()
         return True
     else:
-        context.log.info("⏭️ Skipping evaluation step.")
+        context.log.info("Skipping evaluation step.")
         return False
 
 @op
 def run_log_predictions(context: OpExecutionContext, should_log: bool):
     if should_log:
-        context.log.info("📌 Logging predictions to InfluxDB.")
+        context.log.info("Logging predictions to InfluxDB.")
         log_segment_predictions()
     else:
-        context.log.info("⏭️ Skipping prediction logging step.")
+        context.log.info("Skipping prediction logging step.")
 
 @job
 def segment_incremental_job():

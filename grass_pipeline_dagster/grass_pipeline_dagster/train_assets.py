@@ -74,15 +74,15 @@ def train_model() -> str:
     try:
         train_csv = os.path.join(tempfile.gettempdir(), "train_model.csv")
         client.download_file(minio_bucket, minio_train_object, train_csv)
-        logger.info(f"✅ Loaded train.csv from MinIO: {minio_train_object}")
+        logger.info(f"Loaded train.csv from MinIO: {minio_train_object}")
     except Exception as e:
-        logger.warning(f"⚠️ Could not load train.csv from MinIO: {e}")
+        logger.warning(f"Could not load train.csv from MinIO: {e}")
         local_fallback = os.path.join(os.getcwd(), "dagster_output", "dataset", "train.csv")
         if os.path.exists(local_fallback):
             train_csv = local_fallback
-            logger.info(f"✅ Using fallback local train.csv: {train_csv}")
+            logger.info(f"Using fallback local train.csv: {train_csv}")
         else:
-            logger.error("❌ No train.csv found in MinIO or locally. Training aborted.")
+            logger.error("No train.csv found in MinIO or locally. Training aborted.")
             raise FileNotFoundError("Train CSV not found in MinIO or local path.")
 
     model_output_path = os.path.join(os.getcwd(), "dagster_output", "model", "cnn_model.pth")
@@ -111,7 +111,7 @@ def train_model() -> str:
     if force_retrain:
         new_df = df
         trained_hashes = set()  # All segments will be considered new
-        logger.info(f"⚡ Force retrain active: using ALL {len(new_df)} segments from train.csv.")
+        logger.info(f" Force retrain active: using ALL {len(new_df)} segments from train.csv.")
     else:
         new_df = df[~df["segment_hash"].isin(trained_hashes)].reset_index(drop=True)
         logger.info(f"Segments in train.csv: {len(df)}, New (never-trained) segments in train.csv: {len(new_df)}")
@@ -156,16 +156,16 @@ def train_model() -> str:
         temp_model_path = os.path.join(tempfile.gettempdir(), "cnn_model_resume.pth")
         client.download_file(minio_bucket, minio_object, temp_model_path)
         model.load_state_dict(torch.load(temp_model_path, map_location=device))
-        logger.info(f"✅ Resumed training from model in MinIO: {minio_object}")
+        logger.info(f"Resumed training from model in MinIO: {minio_object}")
         resume_model_found = True
     except Exception as e:
-        logger.warning(f"⚠️ Could not resume from MinIO: {e}")
+        logger.warning(f"Could not resume from MinIO: {e}")
         if os.path.exists(model_output_path):
             model.load_state_dict(torch.load(model_output_path, map_location=device))
-            logger.info(f"✅ Resumed training from local model: {model_output_path}")
+            logger.info(f"Resumed training from local model: {model_output_path}")
             resume_model_found = True
         else:
-            logger.info("🆕 No existing model found. Training from scratch.")
+            logger.info("No existing model found. Training from scratch.")
 
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device)) if use_weighted_loss else nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
@@ -177,7 +177,7 @@ def train_model() -> str:
 
     with mlflow.start_run() as run:
         run_id = run.info.run_id
-        logger.info(f"🎯 Started MLflow run: {run_id}")
+        logger.info(f"Started MLflow run: {run_id}")
 
         mlflow.set_tags({
             "project": "GRASS Sentiment",
@@ -201,7 +201,7 @@ def train_model() -> str:
         mlflow.set_tag("num_samples", len(new_df))
         mlflow.log_artifact(train_csv, artifact_path="data")
 
-        logger.info("🚀 Training model...")
+        logger.info("Training model...")
         model.train()
         for epoch in range(5):
             running_loss = 0.0
@@ -215,19 +215,19 @@ def train_model() -> str:
                 running_loss += loss.item()
                 mlflow.log_metric("batch_loss", loss.item(), step=epoch * len(dataloader) + batch_idx)
             avg_loss = running_loss / len(dataloader)
-            logger.info(f"📊 Epoch {epoch+1}, Loss: {avg_loss:.4f}")
+            logger.info(f"Epoch {epoch+1}, Loss: {avg_loss:.4f}")
             mlflow.log_metric("epoch_loss", avg_loss, step=epoch)
 
         # Save locally
         torch.save(model.state_dict(), model_output_path)
-        logger.info(f"💾 Model saved locally: {model_output_path}")
+        logger.info(f"Model saved locally: {model_output_path}")
 
         # Upload to MinIO
         try:
             upload_to_minio(model_output_path, minio_bucket, minio_object)
-            logger.info(f"☁️ Model uploaded to MinIO: {minio_object}")
+            logger.info(f"Model uploaded to MinIO: {minio_object}")
         except Exception as e:
-            logger.warning(f"❌ Failed to upload model to MinIO: {e}")
+            logger.warning(f"Failed to upload model to MinIO: {e}")
 
         # Register to MLflow
         mlflow.pytorch.log_model(
@@ -245,6 +245,6 @@ def train_model() -> str:
         for seg_hash in sorted(updated_hashes):
             f.write(f"{seg_hash}\n")
     client.upload_file(local_cache_path, minio_bucket, minio_segment_cache_path)
-    logger.info(f"✅ Updated segment hash cache in MinIO: {minio_segment_cache_path}")
+    logger.info(f"Updated segment hash cache in MinIO: {minio_segment_cache_path}")
 
     return model_output_path

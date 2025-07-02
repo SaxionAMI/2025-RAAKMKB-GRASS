@@ -2,9 +2,7 @@ version: "3.8"
 
 services:
   dagster:
-    build:
-      context: .
-      dockerfile: grass_pipeline_dagster/Dockerfile.dagster
+    image: feyalt/grass-pipeline:dagster
     ports:
       - "3000:3000"
     environment:
@@ -16,6 +14,7 @@ services:
       - ./mlflow:/mlflow
       - ./mlflow/artifacts:/app/mlartifacts
       - ./label_studio_data:/data
+      - ./dagster_output:/app/dagster_output
     command: ["dagster", "dev", "-h", "0.0.0.0", "-p", "3000", "-f", "grass_pipeline_dagster/grass_pipeline_dagster/definitions.py"]
 
   mlflow:
@@ -64,9 +63,7 @@ services:
       - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=mytoken
 
   api:
-    build:
-      context: .
-      dockerfile: api/Dockerfile.api
+    image: feyalt/grass-pipeline:api
     ports:
       - "8000:8000"
     volumes:

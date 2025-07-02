@@ -29,7 +29,7 @@ def segment_audio_files(audio_files: list) -> int:
     for file_index, audio_path in enumerate(audio_files):
         label = os.path.basename(os.path.dirname(audio_path)).strip().replace(" ", "_")
         original_name = os.path.splitext(os.path.basename(audio_path))[0]
-        logger.info(f"🎧 Processing file {file_index + 1}/{len(audio_files)}: {audio_path}")
+        logger.info(f" Processing file {file_index + 1}/{len(audio_files)}: {audio_path}")
 
         try:
             if audio_path.lower().endswith(".mp3"):
@@ -40,11 +40,11 @@ def segment_audio_files(audio_files: list) -> int:
                 if audio_np.ndim > 1:
                     audio_np = audio_np[:, 0]
         except Exception as e:
-            logger.warning(f"⚠️ Failed to read {audio_path}: {e}")
+            logger.warning(f"Failed to read {audio_path}: {e}")
             continue
 
         segments = segment_audio(audio_np, sample_rate, segment_duration, segment_overlap)
-        logger.info(f"✂️ {len(segments)} segments created.")
+        logger.info(f" {len(segments)} segments created.")
 
         for seg_index, segment in enumerate(segments):
             segment = (segment - np.mean(segment)).astype(np.float32)
@@ -73,13 +73,13 @@ def segment_audio_files(audio_files: list) -> int:
             with open(image_path, "rb") as f:
                 minio_key = f"spectrograms/{label}/{image_filename}"
                 minio_client.upload_fileobj(f, bucket_name, minio_key)
-                logger.info(f"✅ Uploaded to MinIO: {minio_key}")
+                logger.info(f" Uploaded to MinIO: {minio_key}")
 
-            logger.info(f"📸 Saved spectrogram image: {image_path}")  # ✅ Restored log line
+            logger.info(f" Saved spectrogram image: {image_path}")  
 
             total_saved += 1
             del log_spec, spec, segment
             gc.collect()
 
-    logger.info(f"✅ Completed spectrogram extraction: {total_saved} segments total.")
+    logger.info(f" Completed spectrogram extraction: {total_saved} segments total.")
     return total_saved

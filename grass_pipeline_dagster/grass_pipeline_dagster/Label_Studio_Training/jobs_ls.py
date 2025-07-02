@@ -1,36 +1,47 @@
-from dagster import job, op, Out, In, Nothing, OpExecutionContext, String, Noneable
+# grass_pipeline_dagster/Label_Studio_Training/jobs_ls.py
+
+from dagster import job, op, Out, OpExecutionContext, String, Noneable
 
 from grass_pipeline_dagster.Label_Studio_Training.ls_segment_audios import (
-    ls_segment_audios,               # asset (full segmentation)
-    ls_segment_audios_incremental,  # incremental function
+    ls_segment_audios_incremental,  # incremental segmentation
 )
-from grass_pipeline_dagster.Label_Studio_Training.generate_ls_data import generate_ls_data
-from grass_pipeline_dagster.Label_Studio_Training.train_on_ls_data import train_on_ls_data
 
-@op(config_schema={
-    "audio_path": Noneable(String),
-    "label": Noneable(String),
-}, out=Out(Nothing))
-def run_ls_segment_audios(context: OpExecutionContext):
+from grass_pipeline_dagster.Label_Studio_Training.train_on_ls_data import (
+    train_on_ls_data,  # updated to accept segments list
+)
+
+
+@op(
+    config_schema={
+        "audio_path": Noneable(String),
+        "label": Noneable(String),
+    },
+    out=Out(),
+)
+def run_ls_segment_and_train(context: OpExecutionContext):
     audio_path = context.op_config.get("audio_path")
     label = context.op_config.get("label")
-    if audio_path and label:
-        context.log.info(f"Incremental segmentation: {audio_path} with label: {label}")
-        ls_segment_audios_incremental(audio_path=audio_path, label=label)
-    else:
-        context.log.info("Full segmentation (no audio_path or label provided)")
-        ls_segment_audios()
 
-@op(ins={"start": In(Nothing)}, out=Out(Nothing))
-def run_generate_ls_data():
-    generate_ls_data()
+    if not audio_path or not label:
+        raise ValueError("Both 'audio_path' and 'label' must be provided in config.")
 
-@op(ins={"start": In(Nothing)})
-def run_train_on_ls_data():
-    train_on_ls_data()
+    context.log.info(f"🚀 Starting incremental LS pipeline for: {audio_path} (label={label})")
+
+    # Step 1: Segment the audio
+    segments = ls_segment_audios_incremental(audio_path=audio_path, label=label)
+
+    if not segments:
+        context.log.warning("⚠️ No segments returned from incremental segmentation.")
+        return
+
+    context.log.info(f"✅ {len(segments)} segments generated. Starting training...")
+
+    # Step 2: Train the model on these segments
+    model_path = train_on_ls_data(segments)
+
+    context.log.info(f"🎯 Training complete. Model saved to: {model_path}")
+
 
 @job
 def ls_training_job():
-    seg = run_ls_segment_audios()
-    csvs = run_generate_ls_data(start=seg)
-    run_train_on_ls_data(start=csvs)
+    run_ls_segment_and_train()
