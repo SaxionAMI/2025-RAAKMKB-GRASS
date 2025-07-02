@@ -8,19 +8,14 @@ variables:
   DOCKER_TLS_CERTDIR: ""
   DAGSTER_HOME: "/app/dagster_home"
 
-  # Docker Hub Access Token (use GitLab CI/CD variables in production)
+  # 🔐 Docker Hub Access Token (replace with GitLab CI/CD variable in production)
   DOCKER_USERNAME: "feyalt"
   DOCKER_PASSWORD: "dckr_pat_DgD3EwYpSBbuhXDO5NJN23EBAzc"
 
-  # Docker Images
+  # 🐳 Docker Image Tags
   DAGSTER_IMAGE: "feyalt/grass-pipeline:dagster"
   API_IMAGE: "feyalt/grass-pipeline:api"
   IMAGE_TAG: "latest"
-
-before_script:
-  - apk add --no-cache python3 py3-pip
-  - pip install --upgrade pip
-  - pip install pytest docker-compose
 
 stages:
   - test
@@ -29,19 +24,20 @@ stages:
   - deploy
 
 # -------------------------------
-# UNIT TESTS
+# ✅ UNIT TESTS
 # -------------------------------
-unit_tests:
+test:
   stage: test
   image: python:3.10
   script:
+    - pip install --upgrade pip
     - pip install -r requirements.txt
     - pytest tests/
 
 # -------------------------------
-# BUILD & PUSH DOCKER IMAGES
+# 🛠️ BUILD & PUSH DOCKER IMAGES
 # -------------------------------
-build_images:
+build:
   stage: build
   script:
     - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
@@ -51,9 +47,9 @@ build_images:
     - docker push $API_IMAGE:$IMAGE_TAG
 
 # -------------------------------
-# COMPOSE STACK TESTING
+# 🔁 COMPOSE STACK TESTING
 # -------------------------------
-run_stack_and_test_job:
+run:
   stage: run
   script:
     - docker-compose -f docker-compose.yml up -d
@@ -62,9 +58,9 @@ run_stack_and_test_job:
     - docker-compose logs api
     - docker-compose down
 
-# ------------------------------
-# OPTIONAL LIVE DEPLOYMENT
-# ------------------------------
+# -------------------------------
+# 🚀 MANUAL DEPLOYMENT
+# -------------------------------
 deploy:
   stage: deploy
   when: manual
