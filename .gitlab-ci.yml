@@ -25,10 +25,10 @@ test:
   stage: test
   image: python:3.10
   script:
-    - pip install --upgrade pip
-    - pip install -r requirements.txt
-    - pytest tests/
-
+    - export PYTHONPATH="$CI_PROJECT_DIR/grass_pipeline_dagster"
+    - python -m pip install --upgrade pip
+    - python -m pip install pytest pytest-mock -r requirements.txt
+    - python -m pytest tests/
 # -------------------------------
 # 🛠️ BUILD & PUSH DOCKER IMAGES
 # -------------------------------
