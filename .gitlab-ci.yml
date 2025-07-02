@@ -1,27 +1,22 @@
-image: docker:24.0.2
-
-services:
-  - docker:dind
-
-variables:
-  DOCKER_DRIVER: overlay2
-  DOCKER_TLS_CERTDIR: ""
-  DAGSTER_HOME: "/app/dagster_home"
-
-  # 🔐 Docker Hub Access Token (replace with GitLab CI/CD variable in production)
-  DOCKER_USERNAME: "feyalt"
-  DOCKER_PASSWORD: "dckr_pat_DgD3EwYpSBbuhXDO5NJN23EBAzc"
-
-  # 🐳 Docker Image Tags
-  DAGSTER_IMAGE: "feyalt/grass-pipeline:dagster"
-  API_IMAGE: "feyalt/grass-pipeline:api"
-  IMAGE_TAG: "latest"
+# .gitlab-ci.yml
 
 stages:
   - test
   - build
   - run
   - deploy
+
+variables:
+  DAGSTER_HOME: "/app/dagster_home"
+  IMAGE_TAG: "latest"
+
+  # Docker Hub credentials (❗ replace with CI/CD variables in production)
+  DOCKER_USERNAME: "feyalt"
+  DOCKER_PASSWORD: "dckr_pat_DgD3EwYpSBbuhXDO5NJN23EBAzc"
+
+  # Docker image names
+  DAGSTER_IMAGE: "feyalt/grass-pipeline:dagster"
+  API_IMAGE: "feyalt/grass-pipeline:api"
 
 # -------------------------------
 # ✅ UNIT TESTS
@@ -39,6 +34,12 @@ test:
 # -------------------------------
 build:
   stage: build
+  image: docker:24.0.2
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TLS_CERTDIR: ""  # Required for DinD
+    DOCKER_DRIVER: overlay2
   script:
     - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
     - docker build -t $DAGSTER_IMAGE:$IMAGE_TAG -f grass_pipeline_dagster/Dockerfile.dagster .
@@ -51,6 +52,12 @@ build:
 # -------------------------------
 run:
   stage: run
+  image: docker:24.0.2
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
   script:
     - docker-compose -f docker-compose.yml up -d
     - sleep 30
@@ -59,10 +66,16 @@ run:
     - docker-compose down
 
 # -------------------------------
-# 🚀 MANUAL DEPLOYMENT
+# 🚀 OPTIONAL MANUAL DEPLOYMENT
 # -------------------------------
 deploy:
   stage: deploy
+  image: docker:24.0.2
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
   when: manual
   script:
     - echo "Deploying full stack..."
