@@ -1,4 +1,5 @@
 import os
+import json
 import tempfile
 from datetime import datetime
 import torch
@@ -46,13 +47,17 @@ def train_on_ls_data(segments: list[tuple[str, str]]) -> str:
     settings = load_settings()
     class_labels = settings["class_labels"]
     num_classes = len(class_labels)
+    num_epochs = settings.get("ls_training_epochs", 3)
 
     if not segments:
         raise ValueError("No segments provided for training.")
 
-    model_dir = "/app/dagster_output/label_studio/model"
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_dir = f"/app/dagster_output/label_studio/model/{now}"
     os.makedirs(model_dir, exist_ok=True)
     model_output_path = os.path.join(model_dir, "ls_cnn_model.pth")
+    metrics_output_path = os.path.join(model_dir, "metrics.json")
+
     logger.info(f"Received {len(segments)} corrected LS segments for training.")
 
     # === DataLoader ===
@@ -63,7 +68,7 @@ def train_on_ls_data(segments: list[tuple[str, str]]) -> str:
     dataset = IncrementalSpectrogramDataset(segments, transform=transform)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
-    # === Class balancing check ===
+    # === Class balancing ===
     label_series = [label.lower() for _, label in segments]
     label_counts = {lbl: label_series.count(lbl) for lbl in class_labels}
     min_count = min(label_counts.values())
@@ -80,35 +85,32 @@ def train_on_ls_data(segments: list[tuple[str, str]]) -> str:
         class_weights = None
         logger.info("Using unweighted loss.")
 
-    # === Model Setup ===
+    # === Model ===
     model = models.resnet18(pretrained=False)
     model.fc = nn.Linear(model.fc.in_features, num_classes)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # === Try Resuming from MinIO ===
+    # === Resume from LS latest ===
     resumed = False
     minio_bucket = "grass-pipeline"
-    minio_object = "models/ls/latest/ls_cnn_model.pth"
+    minio_latest = "models/ls/latest/ls_cnn_model.pth"
     try:
         tmp_model_path = os.path.join(tempfile.gettempdir(), "resume_ls_model.pth")
-        client = get_minio_client()
-        client.download_file(minio_bucket, minio_object, tmp_model_path)
+        get_minio_client().download_file(minio_bucket, minio_latest, tmp_model_path)
         model.load_state_dict(torch.load(tmp_model_path, map_location=device))
-        logger.info(f"Resumed model weights from MinIO: {minio_object}")
+        logger.info(f"Resumed model from MinIO: {minio_latest}")
         resumed = True
     except Exception as e:
         logger.warning(f"Could not resume model from MinIO: {e}")
-        resumed = False
 
     model.to(device)
 
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device)) if use_weighted_loss else nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
-    # === MLflow Setup ===
+    # === MLflow ===
     mlflow.set_tracking_uri("http://mlflow:5000")
-    experiment_name = f"CrowdSentiment_LS_Incremental"
-    mlflow.set_experiment(experiment_name)
+    mlflow.set_experiment("CrowdSentiment_LS_Incremental")
 
     with mlflow.start_run() as run:
         run_id = run.info.run_id
@@ -117,27 +119,23 @@ def train_on_ls_data(segments: list[tuple[str, str]]) -> str:
         mlflow.set_tags({
             "project": "GRASS Sentiment",
             "model_type": "ResNet18",
-            "developer": "Ahmed",
             "ls_pipeline": True,
-            "mode": "incremental"
+            "developer": "Ahmed",
+            "mode": "fine-tune",
         })
 
         mlflow.log_params({
-            "epochs": 3,
+            "epochs": num_epochs,
             "batch_size": 32,
             "learning_rate": 1e-4,
-            "optimizer": "Adam",
             "device": device.type,
-            "num_classes": num_classes,
-            "weighted_loss": use_weighted_loss,
-            "source": "LabelStudio",
+            "resumed": resumed,
             "num_segments": len(segments),
-            "resumed": resumed
+            "weighted_loss": use_weighted_loss
         })
 
-        # === Train ===
         model.train()
-        for epoch in range(3):
+        for epoch in range(num_epochs):
             running_loss = 0.0
             for batch_idx, (images, labels) in enumerate(dataloader):
                 images, labels = images.to(device), labels.to(device)
@@ -149,24 +147,45 @@ def train_on_ls_data(segments: list[tuple[str, str]]) -> str:
                 running_loss += loss.item()
                 mlflow.log_metric("batch_loss", loss.item(), step=epoch * len(dataloader) + batch_idx)
             avg_loss = running_loss / len(dataloader)
-            logger.info(f"Epoch {epoch+1}, Loss: {avg_loss:.4f}")
+            logger.info(f"Epoch {epoch + 1}/{num_epochs} Loss: {avg_loss:.4f}")
             mlflow.log_metric("epoch_loss", avg_loss, step=epoch)
 
-        # === Save + Upload ===
+        # Save model locally
         torch.save(model.state_dict(), model_output_path)
-        logger.info(f"Model saved locally: {model_output_path}")
+        logger.info(f"Saved LS model to: {model_output_path}")
 
+        # Save metrics.json
+        metrics = {
+            "timestamp": now,
+            "num_segments": len(segments),
+            "avg_loss": avg_loss,
+            "resumed": resumed,
+            "weights": class_weights.tolist() if class_weights is not None else None
+        }
+        with open(metrics_output_path, "w") as f:
+            json.dump(metrics, f, indent=2)
+
+        # Upload versioned model & metrics
+        versioned_prefix = f"models/ls/versions/{now}/"
         try:
-            upload_to_minio(model_output_path, minio_bucket, minio_object)
-            logger.info("Model uploaded to MinIO.")
+            upload_to_minio(model_output_path, minio_bucket, versioned_prefix + "ls_cnn_model.pth")
+            upload_to_minio(metrics_output_path, minio_bucket, versioned_prefix + "metrics.json")
+            logger.info(f"Uploaded versioned LS model and metrics to: {versioned_prefix}")
         except Exception as e:
-            logger.warning(f"MinIO upload failed: {e}")
+            logger.warning(f"Failed to upload versioned LS model: {e}")
 
-        # Register to MLflow model registry
+        # Upload to latest/ only if this is the first or best so far
+        try:
+            upload_to_minio(model_output_path, minio_bucket, "models/ls/latest/ls_cnn_model.pth")
+            logger.info("Updated latest LS model in MinIO.")
+        except Exception as e:
+            logger.warning(f"Could not update latest LS model: {e}")
+
+        # MLflow artifact
         mlflow.pytorch.log_model(
-        pytorch_model=model,
-        artifact_path="model",
-        registered_model_name="CrowdSentimentLS"
+            pytorch_model=model,
+            artifact_path="model",
+            registered_model_name="CrowdSentimentLS"
         )
 
     return model_output_path

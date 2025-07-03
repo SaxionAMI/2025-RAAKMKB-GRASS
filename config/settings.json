@@ -5,5 +5,7 @@
   "segment_overlap": 0.25,
   "model_path": "dagster_output/model/cnn_model.pth",
   "class_labels": ["Approval", "Disapproval", "Neutral"],
-  "force_retrain": true
+  "force_retrain": true,
+  "resume_from_ls_model": true,
+  "ls_training_epochs": 3
 }
