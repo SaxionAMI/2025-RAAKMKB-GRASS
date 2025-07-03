@@ -12,9 +12,9 @@ variables:
   DOCKER_USERNAME: "feyalt"
   DOCKER_PASSWORD: "dckr_pat_DgD3EwYpSBbuhXDO5NJN23EBAzc"
 
-  # 🐳 Docker image names
-  DAGSTER_IMAGE: "feyalt/grass-pipeline:dagster"
-  API_IMAGE: "feyalt/grass-pipeline:api"
+  # 🐳 Docker image names (NO tag here — it will be added with :$IMAGE_TAG below)
+  DAGSTER_IMAGE: "feyalt/grass-pipeline-dagster"
+  API_IMAGE: "feyalt/grass-pipeline-api"
 
 # -------------------------------
 # ✅ UNIT TESTS
