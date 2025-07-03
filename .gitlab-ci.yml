@@ -1,86 +1,65 @@
 stages:
   - test
-  - build
   - run
   - deploy
 
 variables:
   DAGSTER_HOME: "/app/dagster_home"
-  IMAGE_TAG: "latest"
-
-  # 🔐 Docker Hub credentials (❗ replace with GitLab CI/CD secret variables in production)
-  DOCKER_USERNAME: "feyalt"
-  DOCKER_PASSWORD: "dckr_pat_DgD3EwYpSBbuhXDO5NJN23EBAzc"
-
-  # 🐳 Docker image names (NO tag here — it will be added with :$IMAGE_TAG below)
-  DAGSTER_IMAGE: "feyalt/grass-pipeline-dagster"
-  API_IMAGE: "feyalt/grass-pipeline-api"
+  PYTHON_VERSION: "3.10"
 
 # -------------------------------
-# ✅ UNIT TESTS
+# ✅ UNIT TESTS (Lightweight & Fast)
 # -------------------------------
 test:
   stage: test
-  image: python:3.10
+  image: python:$PYTHON_VERSION
   before_script:
-    # Correct PYTHONPATH for grass_pipeline_dagster/grass_pipeline_dagster/
     - export PYTHONPATH="$CI_PROJECT_DIR/grass_pipeline_dagster"
   script:
     - python -m pip install --upgrade pip
     - python -m pip install -r grass_pipeline_dagster/requirements.dagster.txt
     - python -m pip install pytest pytest-mock
     - python -m pytest tests/
+  artifacts:
+    when: always
+    paths:
+      - test-reports/
+    reports:
+      junit: test-reports/pytest.xml
 
 # -------------------------------
-# 🛠️ BUILD & PUSH DOCKER IMAGES
-# -------------------------------
-build:
-  stage: build
-  image: docker:24.0.2
-  services:
-    - docker:dind
-  variables:
-    DOCKER_TLS_CERTDIR: ""
-    DOCKER_DRIVER: overlay2
-  script:
-    - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-    - docker build -t $DAGSTER_IMAGE:$IMAGE_TAG -f grass_pipeline_dagster/Dockerfile.dagster .
-    - docker build -t $API_IMAGE:$IMAGE_TAG -f api/Dockerfile.api .
-    - docker push $DAGSTER_IMAGE:$IMAGE_TAG
-    - docker push $API_IMAGE:$IMAGE_TAG
-
-# -------------------------------
-# 🔁 COMPOSE STACK TESTING
+# 🔁 STACK TEST (Optional Manual Local Stack Boot)
 # -------------------------------
 run:
   stage: run
   image: docker:24.0.2
   services:
     - docker:dind
+  when: manual
   variables:
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
   script:
     - docker-compose -f docker-compose.yml up -d
-    - sleep 30
+    - sleep 20
     - docker-compose ps
-    - docker-compose logs api || true
+    - docker-compose logs dagster || true
     - docker-compose down
 
 # -------------------------------
-# 🚀 OPTIONAL MANUAL DEPLOYMENT
+# 🚀 OPTIONAL MANUAL DEPLOYMENT (FROM EXISTING DOCKERFILES)
 # -------------------------------
 deploy:
   stage: deploy
   image: docker:24.0.2
   services:
     - docker:dind
+  when: manual
   variables:
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
-  when: manual
   script:
-    - echo "Deploying full stack..."
+    - echo "Deploying local stack (no rebuild)..."
     - docker-compose -f docker-compose.yml up -d
     - docker-compose ps
     - echo "Deployment complete."
