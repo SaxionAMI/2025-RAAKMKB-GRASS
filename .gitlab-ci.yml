@@ -1,5 +1,3 @@
-# .gitlab-ci.yml
-
 stages:
   - test
   - build
@@ -10,11 +8,11 @@ variables:
   DAGSTER_HOME: "/app/dagster_home"
   IMAGE_TAG: "latest"
 
-  # Docker Hub credentials (❗ replace with CI/CD variables in production)
+  # 🔐 Docker Hub credentials (❗ replace with GitLab CI/CD secret variables in production)
   DOCKER_USERNAME: "feyalt"
   DOCKER_PASSWORD: "dckr_pat_DgD3EwYpSBbuhXDO5NJN23EBAzc"
 
-  # Docker image names
+  # 🐳 Docker image names
   DAGSTER_IMAGE: "feyalt/grass-pipeline:dagster"
   API_IMAGE: "feyalt/grass-pipeline:api"
 
@@ -24,11 +22,15 @@ variables:
 test:
   stage: test
   image: python:3.10
+  before_script:
+    # Correct PYTHONPATH for grass_pipeline_dagster/grass_pipeline_dagster/
+    - export PYTHONPATH="$CI_PROJECT_DIR/grass_pipeline_dagster"
   script:
-    - export PYTHONPATH="$CI_PROJECT_DIR"
     - python -m pip install --upgrade pip
-    - python -m pip install pytest pytest-mock -r requirements.txt
+    - python -m pip install -r grass_pipeline_dagster/requirements.dagster.txt
+    - python -m pip install pytest pytest-mock
     - python -m pytest tests/
+
 # -------------------------------
 # 🛠️ BUILD & PUSH DOCKER IMAGES
 # -------------------------------
@@ -38,7 +40,7 @@ build:
   services:
     - docker:dind
   variables:
-    DOCKER_TLS_CERTDIR: ""  # Required for DinD
+    DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
   script:
     - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
@@ -62,7 +64,7 @@ run:
     - docker-compose -f docker-compose.yml up -d
     - sleep 30
     - docker-compose ps
-    - docker-compose logs api
+    - docker-compose logs api || true
     - docker-compose down
 
 # -------------------------------
