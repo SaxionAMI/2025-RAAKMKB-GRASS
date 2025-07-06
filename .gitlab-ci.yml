@@ -8,7 +8,7 @@ variables:
   PYTHON_VERSION: "3.10"
 
 # -------------------------------
-# ✅ UNIT TESTS (Lightweight & Fast)
+# UNIT TESTS (Lightweight & Fast)
 # -------------------------------
 test:
   stage: test
@@ -28,7 +28,7 @@ test:
       junit: test-reports/pytest.xml
 
 # -------------------------------
-# 🔁 STACK TEST (Optional Manual Local Stack Boot)
+# STACK TEST (Optional Manual Local Stack Boot)
 # -------------------------------
 run:
   stage: run
@@ -47,7 +47,7 @@ run:
     - docker-compose down
 
 # -------------------------------
-# 🚀 OPTIONAL MANUAL DEPLOYMENT (FROM EXISTING DOCKERFILES)
+# OPTIONAL MANUAL DEPLOYMENT (FROM EXISTING DOCKERFILES)
 # -------------------------------
 deploy:
   stage: deploy

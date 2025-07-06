@@ -1,11 +1,11 @@
 {
-  "input_dir": "audio_input/normalized",
+  "input_dir": "audio_input",
   "output_dir": "output_logs",
   "segment_duration": 1.0,
   "segment_overlap": 0.25,
-  "model_path": "dagster_output/model/cnn_model.pth",
-  "class_labels": ["Approval", "Disapproval", "Neutral"],
+  "model_path": "dagster_output/model/latest/cnn_model.pth",
+  "class_labels": ["approval", "disapproval", "neutral"],
   "force_retrain": true,
-  "resume_from_ls_model": true,
+  "resume_from_ls_model": false,
   "ls_training_epochs": 3
 }

@@ -32,7 +32,8 @@ class SpectrogramTestDataset(Dataset):
         row = self.data.iloc[idx]
         image = Image.open(row['path']).convert("RGB")
         label = self.label_map[row['label'].lower()]
-        return self.transform(image) if self.transform else image, label
+        image = self.transform(image) if self.transform else image
+        return image, label
 
 
 @asset
@@ -42,7 +43,7 @@ def evaluate_model() -> dict:
     client = get_minio_client()
     influx = get_influx_client()
     bucket = "grass-pipeline"
-    class_labels = settings["class_labels"]
+    class_labels = [label.lower() for label in settings["class_labels"]]
     num_classes = len(class_labels)
 
     logger.info("Starting evaluate_model asset...")
@@ -73,7 +74,7 @@ def evaluate_model() -> dict:
             test_csv = fallback
             logger.warning(f"Using local fallback for test.csv: {fallback}")
         else:
-            raise FileNotFoundError("test.csv not found")
+            raise FileNotFoundError("test.csv not found in MinIO or locally")
 
     # === Prepare test dataset ===
     transform = transforms.Compose([transforms.Resize((224, 224)), transforms.ToTensor()])
@@ -89,10 +90,10 @@ def evaluate_model() -> dict:
     try:
         client.download_file(bucket, model_key, model_temp)
         logger.info(f"Downloaded model from MinIO: {model_key}")
-    except:
+    except Exception:
         local_fallback = os.path.join("dagster_output", "model", "versions", timestamp, "cnn_model.pth")
         if not os.path.exists(local_fallback):
-            raise FileNotFoundError("Model not found")
+            raise FileNotFoundError("Model not found in MinIO or locally")
         model_temp = local_fallback
         logger.warning(f"Using local fallback model: {local_fallback}")
 
@@ -118,7 +119,7 @@ def evaluate_model() -> dict:
     logger.info(f"Precision: {precision:.4f} | Recall: {recall:.4f} | F1: {f1:.4f}")
     logger.info(f"Confusion Matrix:\n{cm}")
 
-    # === Update current metrics.json with eval results ===
+    # === Update metrics.json ===
     local_metrics_path = os.path.join(tempfile.gettempdir(), "metrics_eval.json")
     client.download_file(bucket, metrics_key, local_metrics_path)
     with open(local_metrics_path, "r") as f:
@@ -134,9 +135,8 @@ def evaluate_model() -> dict:
     with open(local_metrics_path, "w") as f:
         json.dump(metrics_data, f, indent=4)
     client.upload_file(local_metrics_path, bucket, metrics_key)
-    logger.info(f"Current model avg_loss: {current_avg_loss:.4f}")
 
-    # === Load latest F1 for comparison ===
+    # === Load latest F1 for promotion check ===
     try:
         latest_metrics_temp = os.path.join(tempfile.gettempdir(), "latest_metrics.json")
         client.download_file(bucket, "models/cnn/latest/metrics.json", latest_metrics_temp)
@@ -153,6 +153,15 @@ def evaluate_model() -> dict:
         logger.info("Promoting model to latest/")
         client.upload_file(model_temp, bucket, "models/cnn/latest/cnn_model.pth")
         client.upload_file(local_metrics_path, bucket, "models/cnn/latest/metrics.json")
+
+        try:
+            os.makedirs("dagster_output/model/latest", exist_ok=True)
+            torch.save(model.state_dict(), "dagster_output/model/latest/cnn_model.pth")
+            with open("dagster_output/model/latest/metrics.json", "w") as f:
+                json.dump(metrics_data, f, indent=4)
+            logger.info("Model and metrics also saved locally under latest/")
+        except Exception as e:
+            logger.warning(f"Failed to save latest model locally: {e}")
     else:
         logger.info("Model not promoted (F1 not improved)")
 
@@ -176,6 +185,7 @@ def evaluate_model() -> dict:
         mlflow.log_param("num_classes", num_classes)
         mlflow.log_param("dataset_size", len(test_loader.dataset))
         mlflow.set_tag("model_type", "ResNet18")
+
         cm_path = f"dagster_output/eval/confusion_matrix_{timestamp}.csv"
         os.makedirs(os.path.dirname(cm_path), exist_ok=True)
         pd.DataFrame(cm, index=class_labels, columns=class_labels).to_csv(cm_path)
