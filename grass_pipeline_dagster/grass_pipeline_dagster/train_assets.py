@@ -33,7 +33,7 @@ def file_hash(path):
 def train_model() -> dict:
     logger = get_dagster_logger()
     start_time = time.time()
-    logger.info("🟢 Starting train_model asset...")
+    logger.info("Starting train_model asset...")
 
     settings = load_settings()
     class_labels = settings["class_labels"]
@@ -52,19 +52,19 @@ def train_model() -> dict:
     try:
         train_csv = os.path.join(tempfile.gettempdir(), "train_model.csv")
         client.download_file(minio_bucket, minio_train_object, train_csv)
-        logger.info(f"✅ Loaded train.csv from MinIO: {minio_train_object}")
+        logger.info(f"Loaded train.csv from MinIO: {minio_train_object}")
     except Exception as e:
-        logger.warning(f"⚠️ Could not load train.csv from MinIO: {e}")
+        logger.warning(f"Could not load train.csv from MinIO: {e}")
         local_fallback = os.path.join(os.getcwd(), "dagster_output", "dataset", "train.csv")
         if os.path.exists(local_fallback):
             train_csv = local_fallback
-            logger.info(f"📂 Using fallback local train.csv: {train_csv}")
+            logger.info(f"Using fallback local train.csv: {train_csv}")
         else:
-            raise FileNotFoundError("❌ train.csv not found in MinIO or locally.")
+            raise FileNotFoundError("train.csv not found in MinIO or locally.")
 
     df = pd.read_csv(train_csv)
-    logger.info(f"📄 Loaded train.csv with {len(df)} rows")
-    logger.info("🔍 Hashing segments for incremental training...")
+    logger.info(f"Loaded train.csv with {len(df)} rows")
+    logger.info("Hashing segments for incremental training...")
     df["segment_hash"] = df["path"].apply(file_hash)
 
     # === Load existing hash cache ===
@@ -74,22 +74,22 @@ def train_model() -> dict:
         client.download_file(minio_bucket, minio_segment_cache_path, local_cache_path)
         with open(local_cache_path, "r") as f:
             trained_hashes = set(line.strip() for line in f)
-        logger.info(f"📦 Loaded {len(trained_hashes)} existing segment hashes")
+        logger.info(f"Loaded {len(trained_hashes)} existing segment hashes")
     except Exception:
         trained_hashes = set()
-        logger.info("🆕 No existing hash cache found. All segments treated as new.")
+        logger.info("No existing hash cache found. All segments treated as new.")
 
     # === Determine segments to train on ===
     if force_retrain:
         new_df = df
         trained_hashes = set()
-        logger.info("🔁 Force retrain enabled: using ALL segments.")
+        logger.info("Force retrain enabled: using ALL segments.")
     else:
         new_df = df[~df["segment_hash"].isin(trained_hashes)].reset_index(drop=True)
         logger.info(f"➕ Found {len(new_df)} new segments to train on")
 
     if new_df.empty:
-        logger.info("🚫 No new segments found. Skipping training.")
+        logger.info("No new segments found. Skipping training.")
         return {
             "status": "skipped",
             "reason": "No new segments found.",
@@ -116,10 +116,10 @@ def train_model() -> dict:
                     image = self.transform(image)
                 return image, label
             except Exception as e:
-                logger.warning(f"⚠️ Skipping corrupted image: {img_path}, error: {e}")
+                logger.warning(f"Skipping corrupted image: {img_path}, error: {e}")
                 return self.__getitem__((idx + 1) % len(self.data))
 
-    logger.info("🧾 Preparing DataLoader...")
+    logger.info("Preparing DataLoader...")
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor()
@@ -135,13 +135,13 @@ def train_model() -> dict:
         total = label_counts.sum()
         weights = [total / (len(class_labels) * label_counts.get(label.lower(), 1)) for label in class_labels]
         class_weights = torch.tensor(weights, dtype=torch.float32)
-        logger.info(f"⚖️ Using weighted loss: {class_weights.tolist()}")
+        logger.info(f"Using weighted loss: {class_weights.tolist()}")
     else:
         class_weights = None
-        logger.info("📊 Balanced dataset. Using unweighted loss.")
+        logger.info("Balanced dataset. Using unweighted loss.")
 
     # === Initialize model ===
-    logger.info("🧠 Initializing ResNet18 model...")
+    logger.info("Initializing ResNet18 model...")
     model = models.resnet18(pretrained=True)
     model.fc = nn.Linear(model.fc.in_features, num_classes)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -157,9 +157,9 @@ def train_model() -> dict:
                 client.download_file(minio_bucket, path, temp)
                 model.load_state_dict(torch.load(temp, map_location=device))
                 resume_source = "ls_latest"
-                logger.info("🔁 Resumed model from Label Studio checkpoint.")
+                logger.info("Resumed model from Label Studio checkpoint.")
             except Exception as e:
-                logger.warning(f"⚠️ Failed to resume from Label Studio: {e}")
+                logger.warning(f"Failed to resume from Label Studio: {e}")
         if resume_source == "scratch":
             try:
                 path = "models/cnn/latest/cnn_model.pth"
@@ -167,12 +167,12 @@ def train_model() -> dict:
                 client.download_file(minio_bucket, path, temp)
                 model.load_state_dict(torch.load(temp, map_location=device))
                 resume_source = "cnn_latest"
-                logger.info("🔁 Resumed model from latest CNN checkpoint.")
+                logger.info("Resumed model from latest CNN checkpoint.")
             except Exception as e:
-                logger.warning(f"⚠️ Failed to resume from CNN checkpoint: {e}")
-                logger.info("⚙️ Training will start from scratch.")
+                logger.warning(f"Failed to resume from CNN checkpoint: {e}")
+                logger.info("Training will start from scratch.")
     else:
-        logger.info("🔄 Force retrain enabled — model will start from scratch (no resume).")
+        logger.info("Force retrain enabled — model will start from scratch (no resume).")
 
     # === MLflow tracking ===
     mlflow.set_tracking_uri("http://mlflow:5000")
@@ -182,7 +182,7 @@ def train_model() -> dict:
     minio_model_path = f"models/cnn/versions/{timestamp}/cnn_model.pth"
     os.makedirs(os.path.dirname(local_model_path), exist_ok=True)
 
-    logger.info("📡 Starting MLflow run...")
+    logger.info("Starting MLflow run...")
     with mlflow.start_run() as run:
         mlflow.set_tags({
             "project": "GRASS Sentiment",
@@ -203,7 +203,7 @@ def train_model() -> dict:
             "total_segments": len(df)
         })
         mlflow.log_dict(label_counts.to_dict(), "label_distribution.json")
-        logger.info(f"🧪 MLflow experiment_id: {run.info.experiment_id}, run_id: {run.info.run_id}")
+        logger.info(f"MLflow experiment_id: {run.info.experiment_id}, run_id: {run.info.run_id}")
 
         criterion = nn.CrossEntropyLoss(weight=class_weights.to(device)) if use_weighted_loss else nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr=1e-4)
@@ -223,17 +223,17 @@ def train_model() -> dict:
                 epoch_loss += loss.item()
             avg_loss = epoch_loss / len(dataloader)
             mlflow.log_metric("epoch_loss", avg_loss, step=epoch)
-            logger.info(f"✅ Epoch {epoch+1}/5 completed. Avg Loss: {avg_loss:.4f}")
+            logger.info(f"Epoch {epoch+1}/5 completed. Avg Loss: {avg_loss:.4f}")
             total_loss += avg_loss
         avg_loss = total_loss / 5
 
         torch.save(model.state_dict(), local_model_path)
-        logger.info(f"💾 Saved trained model locally: {local_model_path}")
+        logger.info(f"Saved trained model locally: {local_model_path}")
         client.upload_file(local_model_path, minio_bucket, minio_model_path)
-        logger.info(f"🚀 Uploaded model to MinIO: {minio_model_path}")
+        logger.info(f"Uploaded model to MinIO: {minio_model_path}")
 
         mlflow.pytorch.log_model(model, artifact_path="model", registered_model_name="CrowdSentimentResNet")
-        logger.info("📘 Model registered in MLflow.")
+        logger.info("Model registered in MLflow.")
 
         metrics = {
             "avg_loss": avg_loss,
@@ -254,10 +254,10 @@ def train_model() -> dict:
         for seg_hash in sorted(updated_hashes):
             f.write(f"{seg_hash}\n")
     client.upload_file(local_cache_path, minio_bucket, minio_segment_cache_path)
-    logger.info(f"✅ Updated segment hash cache in MinIO: {minio_segment_cache_path}")
+    logger.info(f"Updated segment hash cache in MinIO: {minio_segment_cache_path}")
 
     total_time = round(time.time() - start_time, 2)
-    logger.info(f"🏁 train_model completed successfully in {total_time} seconds.")
+    logger.info(f"train_model completed successfully in {total_time} seconds.")
 
     return {
         "status": "success",
