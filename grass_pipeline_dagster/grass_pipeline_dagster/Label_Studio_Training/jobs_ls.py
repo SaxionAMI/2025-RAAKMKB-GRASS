@@ -25,21 +25,21 @@ def run_ls_segment_and_train(context: OpExecutionContext):
     if not audio_path or not label:
         raise ValueError("Both 'audio_path' and 'label' must be provided in config.")
 
-    context.log.info(f"🚀 Starting incremental LS pipeline for: {audio_path} (label={label})")
+    context.log.info(f"Starting incremental LS pipeline for: {audio_path} (label={label})")
 
     # Step 1: Segment the audio
     segments = ls_segment_audios_incremental(audio_path=audio_path, label=label)
 
     if not segments:
-        context.log.warning("⚠️ No segments returned from incremental segmentation.")
+        context.log.warning("No segments returned from incremental segmentation.")
         return
 
-    context.log.info(f"✅ {len(segments)} segments generated. Starting training...")
+    context.log.info(f"{len(segments)} segments generated. Starting training...")
 
     # Step 2: Train the model on these segments
     model_path = train_on_ls_data(segments)
 
-    context.log.info(f"🎯 Training complete. Model saved to: {model_path}")
+    context.log.info(f"Training complete. Model saved to: {model_path}")
 
 
 @job

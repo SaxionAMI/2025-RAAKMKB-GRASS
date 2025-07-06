@@ -130,7 +130,7 @@ def ls_segment_audios():
             plt.savefig(image_path, bbox_inches="tight", pad_inches=0)
             plt.close()
 
-            logger.info(f"📸 LS: Saved spectrogram image: {image_path}")
+            logger.info(f"LS: Saved spectrogram image: {image_path}")
 
             del log_spec, spec, segment
             gc.collect()

@@ -120,7 +120,6 @@ def train_on_ls_data(segments: list[tuple[str, str]]) -> str:
             "project": "GRASS Sentiment",
             "model_type": "ResNet18",
             "ls_pipeline": True,
-            "developer": "Ahmed",
             "mode": "fine-tune",
         })
 
