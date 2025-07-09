@@ -49,7 +49,7 @@ class TextRedirector:
 # === Audio Stream Callback ===
 def audio_callback(indata, frames, time_info, status):
     if status:
-        print(f"⚠️ Audio stream status: {status}")
+        print(f"Audio stream status: {status}")
     audio_buffer.extend(indata[:, 0])
 
 # === Producer Thread ===
@@ -76,9 +76,9 @@ def segment_consumer():
             continue
 
         try:
-            print(f"\n🎙️ Captured Clip {segment_idx} ({SEGMENT_SECONDS:.1f}s)")
-            print(f"💾 Saved to: {path}")
-            print(f"📡 Sending to: {ENDPOINT} ...")
+            print(f"\nCaptured Clip {segment_idx} ({SEGMENT_SECONDS:.1f}s)")
+            print(f"Saved to: {path}")
+            print(f"Sending to: {ENDPOINT} ...")
 
             start_time = time.perf_counter()
             with open(path, 'rb') as f:
@@ -96,9 +96,9 @@ def segment_consumer():
 
             if response.status_code == 200:
                 result = response.json()
-                print(f"🕒 Inference Response Time: {elapsed} ms")
+                print(f"Inference Response Time: {elapsed} ms")
 
-                print(f"✅ Clip {segment_idx} | {result['segments_processed']} Segments")
+                print(f"Clip {segment_idx} | {result['segments_processed']} Segments")
                 for pred in result.get("predictions", []):
                     label = pred.get('label')
                     confidence = pred.get('confidence')
@@ -109,14 +109,14 @@ def segment_consumer():
                           f"Smoothed: {smoothed_label} ({smoothed_conf}), Latency: {latency} ms")
 
                 if "influx_log_time_ms" in result:
-                    print(f"📤 InfluxDB write took {result['influx_log_time_ms']} ms")
+                    print(f"InfluxDB write took {result['influx_log_time_ms']} ms")
 
-                print(f"✅ Clip {segment_idx} processed | Avg latency: {result.get('avg_latency_ms')} ms\n")
+                print(f"Clip {segment_idx} processed | Avg latency: {result.get('avg_latency_ms')} ms\n")
             else:
-                print(f"❌ Inference failed: {response.status_code} {response.text}")
+                print(f"Inference failed: {response.status_code} {response.text}")
 
         except Exception as e:
-            print(f"❌ Error sending clip {segment_idx}: {e}")
+            print(f"Error sending clip {segment_idx}: {e}")
 
         finally:
             try:
@@ -132,7 +132,7 @@ def start_stream():
     global stream
     stream = sd.InputStream(callback=audio_callback, samplerate=SAMPLE_RATE, channels=CHANNELS, dtype='int16')
     stream.start()
-    print(f"\n🎧 Listening started. Session ID: {SESSION_ID}\n")
+    print(f"\nListening started. Session ID: {SESSION_ID}\n")
 
     Thread(target=segment_producer, daemon=True).start()
     Thread(target=segment_consumer, daemon=True).start()
@@ -144,9 +144,9 @@ def stop_stream():
         try:
             stream.stop()
             stream.close()
-            print("\n🛑 Listening stopped.\n")
+            print("\nListening stopped.\n")
         except Exception as e:
-            print(f"\n❌ Failed to stop stream: {e}")
+            print(f"\nFailed to stop stream: {e}")
 
 def quit_app(root):
     stop_stream()
@@ -170,7 +170,7 @@ def launch_gui():
     log_output.grid(row=1, column=0, columnspan=3, padx=10, pady=10)
 
     sys.stdout = TextRedirector(log_output)
-    print("🎯 Application ready. Press 'Start Listening' to begin...\n")
+    print("Application ready. Press 'Start Listening' to begin...\n")
 
     root.protocol("WM_DELETE_WINDOW", lambda: quit_app(root))
     root.mainloop()
