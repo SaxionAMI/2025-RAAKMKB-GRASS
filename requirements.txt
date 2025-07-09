@@ -8,3 +8,5 @@ pybind11
 scikit-learn      
 scipy
 soundfile
+requests
+torchaudio

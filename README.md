@@ -4,6 +4,16 @@ This branch contains the full MLOps system for the GRASS Project , a simulation-
 
 ---
 
+## Install Local Requirements
+
+Install the requirements via:
+
+```bash
+pip install -r requirements.tx
+```
+
+---
+
 ## Required Folder Structure
 
 Before running the pipeline, **create a folder named `audio_input` in the project root**. This folder must contain **labeled class subfolders** with WAV files for each sentiment class.
@@ -20,7 +30,32 @@ GRASS_Pipeline/
 
 These folders are used for segmentation and dataset preparation.
 
+
+## Required for the Realtime Project_root\api\api_realtime\stream_listener.py
+
+The GUI sends live audio clips to the real-time FastAPI container (`localhost:8010/infer`), which uses a trained model to perform inference. This model must already exist at the path defined in your configuration file Project_root\config\settings.json:
+
+```json
+{
+  "model_path": "dagster_output/model/latest/cnn_model.pth",
+  ...
+}
+```
+Ensure the model exists at this path before launching the GUI. You can generate it by running the Dagster pipeline.
+
+After everything is set up:
+
+```bash
+python stream_gui.py
+```
+
+This launches a desktop interface to:
+- Start/stop mic listening
+- Stream audio segments to FastAPI
+- Display real-time predictions, confidence, latency, and logs
+
 ---
+
 
 ## How to Run the System (via Docker Compose)
 
@@ -41,6 +76,7 @@ docker-compose up
 - **FastAPI** – Inference endpoint: http://localhost:8000 *(docs: /docs)*  
 - **Label Studio** – Annotation tool: http://localhost:8080  
 - **Grafana** – Dashboards: http://localhost:33000 *(admin:admin)*
+- **grass_pipeline-realtime** - Realtime API Inference: http://localhost:8010 *(docs: /docs)*
 
 ---
 
