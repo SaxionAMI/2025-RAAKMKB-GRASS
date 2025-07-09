@@ -99,3 +99,18 @@ services:
       - ./grafana_data:/var/lib/grafana
     depends_on:
       - influxdb
+  grass_pipeline-realtime:
+    build:
+      context: .
+      dockerfile: api/api_realtime/Dockerfile.realtime
+    ports:
+      - "8010:8000"
+    volumes:
+      - ./api:/app/api
+      - ./grass_pipeline_dagster:/app/grass_pipeline_dagster
+      - ./config:/app/config
+      - ./dagster_output:/app/dagster_output
+    working_dir: /app
+    depends_on:
+      - influxdb
+    restart: always
