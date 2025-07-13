@@ -15,9 +15,9 @@ import queue
 import sys
 
 # === Configuration ===
-SAMPLE_RATE = 16000
+SAMPLE_RATE = 44100
 CHANNELS = 1
-BUFFER_SECONDS = 2
+BUFFER_SECONDS = 2 # holds the last 2 seconds of recorded mic input.
 SEGMENT_SECONDS = 2.0
 OVERLAP_SECONDS = 0.25
 SEND_INTERVAL = 0.75
@@ -132,6 +132,7 @@ def start_stream():
     global stream
     stream = sd.InputStream(callback=audio_callback, samplerate=SAMPLE_RATE, channels=CHANNELS, dtype='int16')
     stream.start()
+    print(f"Stream started at sample rate: {stream.samplerate}")
     print(f"\nListening started. Session ID: {SESSION_ID}\n")
 
     Thread(target=segment_producer, daemon=True).start()
