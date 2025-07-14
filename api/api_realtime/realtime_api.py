@@ -1,3 +1,4 @@
+import json
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from cpp_processing.segmenter import segment_audio
@@ -59,6 +60,16 @@ def load_model():
 
     influx = get_influx_client()
     write_api = influx.write_api(write_options=SYNCHRONOUS)
+
+    #  Grafana label mapping
+    try:
+        with open("config/grafana_label_order.json", "r") as f:
+            app.state.grafana_label_map = json.load(f)
+        print("Loaded Grafana label mapping.")
+        print("Grafana label map (for verification):", app.state.grafana_label_map)
+    except Exception as e:
+        print("⚠️ Failed to load grafana_label_order.json:", e)
+        app.state.grafana_label_map = {}
 
     print("Real-time model and InfluxDB logger ready")
 
@@ -130,12 +141,9 @@ async def infer(
                 smoothed_label = Counter(label_buffer).most_common(1)[0][0] if label_buffer else label.lower()
                 smoothed_conf = round(np.mean(confidence_buffer), 4) if confidence_buffer else confidence
 
-                plot_numeric_map = {
-                    label.lower(): idx for idx, label in enumerate(settings["class_labels"])
-                }
-
-                label_numeric = plot_numeric_map[label.lower()]
-                smoothed_label_numeric = plot_numeric_map[smoothed_label]
+                grafana_map = app.state.grafana_label_map
+                label_numeric = grafana_map.get(label.lower(), -1)
+                smoothed_label_numeric = grafana_map.get(smoothed_label.lower(), -1)
 
                 point = (
                     Point("sentiment_realtime")
