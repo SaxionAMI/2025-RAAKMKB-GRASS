@@ -1,0 +1,6 @@
+outs:
+- md5: b4af03902c4fe32bbc8ec39b261c7809.dir
+  size: 2423834908
+  nfiles: 9488
+  hash: md5
+  path: spectrogram_images
