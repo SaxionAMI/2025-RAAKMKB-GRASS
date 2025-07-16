@@ -39,3 +39,4 @@ vcpkg/
 # === System-specific ===
 .DS_Store
 Thumbs.db
+/audio_input
