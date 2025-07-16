@@ -22,6 +22,7 @@ dagster_output/*
 
 # allow DVC-tracked folders and DVC pointer files
 !dagster_output/spectrogram_images.dvc
+!dagster_output/dataset/
 !dagster_output/dataset/train.csv.dvc
 !dagster_output/dataset/test.csv.dvc
 
