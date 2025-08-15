@@ -91,9 +91,13 @@ async def infer(
         audio_np = (audio_np - np.mean(audio_np)).astype(np.float32)
         audio_np /= (np.std(audio_np) + 1e-8)
 
-        segment_duration = float(settings["segment_duration"])
-        segment_overlap = float(settings["segment_overlap"])
-        segments = segment_audio(audio_np, sample_rate, segment_duration, segment_overlap)
+        # --- segmentation params (keep original logic; interpret overlap as seconds) ---
+        segment_duration = float(settings["segment_duration"])     # window (s)
+        segment_overlap = float(settings["segment_overlap"])       # desired overlap (s)
+        hop_sec = max(1e-6, segment_duration - segment_overlap)    # step = window - overlap
+
+        # Call segmenter with hop (step) seconds
+        segments = segment_audio(audio_np, sample_rate, segment_duration, hop_sec)
         if segments is None or len(segments) == 0:
             return JSONResponse(content={"error": "No segments found"}, status_code=400)
 

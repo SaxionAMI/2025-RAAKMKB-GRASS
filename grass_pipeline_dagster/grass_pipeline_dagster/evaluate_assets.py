@@ -13,6 +13,7 @@ from sklearn.metrics import accuracy_score, precision_recall_fscore_support, con
 from dagster import asset, get_dagster_logger
 from influxdb_client import Point
 from influxdb_client.client.write_api import SYNCHRONOUS
+import matplotlib.pyplot as plt  # [MINIMAL ADD] for visual artifacts
 
 from grass_pipeline_dagster.utils import load_settings, get_minio_client, get_influx_client
 
@@ -165,6 +166,30 @@ def evaluate_model() -> dict:
     else:
         logger.info("Model not promoted (F1 not improved)")
 
+    # === Build evaluation manifest (dataset traceability) ===
+    try:
+        df_eval = pd.read_csv(test_csv)
+        class_dist = (
+            df_eval["label"].str.lower().value_counts().reindex(class_labels, fill_value=0).to_dict()
+        )
+        eval_manifest = {
+            "type": "evaluation_manifest",
+            "created_utc": datetime.utcnow().isoformat() + "Z",
+            "version_timestamp": timestamp,
+            "dataset": {
+                "csv_path": os.path.abspath(test_csv),
+                "rows": int(len(df_eval)),
+                "class_labels": class_labels,
+                "class_distribution": class_dist,
+            },
+        }
+        eval_manifest_path = os.path.join(tempfile.gettempdir(), f"evaluation_manifest_{timestamp}.json")
+        with open(eval_manifest_path, "w") as f:
+            json.dump(eval_manifest, f, indent=4)
+    except Exception as e:
+        logger.warning(f"Failed to build evaluation manifest: {e}")
+        eval_manifest_path = None
+
     # === MLflow ===
     mlflow.set_tracking_uri("http://mlflow:5000")
     mlflow.set_experiment(f"CrowdSentimentEval_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
@@ -190,6 +215,48 @@ def evaluate_model() -> dict:
         os.makedirs(os.path.dirname(cm_path), exist_ok=True)
         pd.DataFrame(cm, index=class_labels, columns=class_labels).to_csv(cm_path)
         mlflow.log_artifact(cm_path, artifact_path="confusion_matrix")
+
+        # === NEW (MINIMAL): visual artifacts for confusion matrix & metrics with vibrant colors ===
+        try:
+            # Confusion matrix heatmap with vibrant colors
+            cm_fig_path = f"dagster_output/eval/confusion_matrix_{timestamp}.png"
+            plt.figure(figsize=(6, 5))
+            plt.imshow(cm, interpolation="nearest", cmap="coolwarm")  # vibrant color map
+            plt.title("Confusion Matrix")
+            plt.xlabel("Predicted")
+            plt.ylabel("True")
+            plt.xticks(range(len(class_labels)), class_labels, rotation=45, ha="right")
+            plt.yticks(range(len(class_labels)), class_labels)
+            for i in range(cm.shape[0]):
+                for j in range(cm.shape[1]):
+                    plt.text(j, i, str(cm[i, j]), ha="center", va="center", color="black", fontsize=9)
+            plt.colorbar()
+            plt.tight_layout()
+            plt.savefig(cm_fig_path, dpi=150)
+            plt.close()
+            mlflow.log_artifact(cm_fig_path, artifact_path="confusion_matrix")
+
+            # Metrics bar chart with vibrant colors
+            metrics_fig_path = f"dagster_output/eval/metrics_{timestamp}.png"
+            plt.figure(figsize=(6, 4))
+            metric_names = ["accuracy", "precision", "recall", "f1_score"]
+            metric_values = [acc, precision, recall, f1]
+            colors = ["#2ca02c", "#1f77b4", "#ff7f0e", "#d62728"]  # vibrant palette
+            plt.bar(metric_names, metric_values, color=colors)
+            plt.ylim(0, 1)
+            plt.title("Evaluation Metrics")
+            plt.ylabel("Score")
+            plt.tight_layout()
+            plt.savefig(metrics_fig_path, dpi=150)
+            plt.close()
+            mlflow.log_artifact(metrics_fig_path, artifact_path="metrics")
+        except Exception as e:
+            logger.warning(f"Failed to generate/log visual artifacts: {e}")
+
+        # === log dataset + evaluation manifest ===
+        mlflow.log_artifact(test_csv, artifact_path="dataset")
+        if eval_manifest_path and os.path.exists(eval_manifest_path):
+            mlflow.log_artifact(eval_manifest_path, artifact_path="dataset")
 
     # === InfluxDB ===
     influx.write_api(write_options=SYNCHRONOUS).write(

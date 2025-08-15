@@ -27,6 +27,7 @@ influxdb_data/
 grafana_data/
 vcpkg/
 /benchmark_stft_comparison.py
+/count.py
 
 
 # === Project-specific nested output ===
