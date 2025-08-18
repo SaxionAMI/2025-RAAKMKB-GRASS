@@ -44,8 +44,8 @@ build:
     expire_in: 1 day
 
 # -------------------------------
-# 3) DEPLOY - SIMPLE, NO PULL / NO BUILD
-#    starts containers only if images are already present on the runner
+# 3) DEPLOY - start required services only (realtime skipped)
+#    This uses --no-build so CI will not build or extract images.
 # -------------------------------
 deploy:
   stage: deploy
@@ -53,7 +53,11 @@ deploy:
   services:
     - docker:dind
   when: manual
+  dependencies:
+    - build
+  before_script:
+    - export $(cat deploy.env | xargs) || true
   script:
-    - echo "Deploy: starting core services only (realtime skipped)"
-    - docker-compose -f docker-compose.yml up -d --no-build dagster api mlflow minio influxdb labelstudio grafana
-    - docker-compose -f docker-compose.yml ps
+    - 'echo "Deploy: starting core services only (realtime skipped)"'
+    - 'docker-compose -f docker-compose.yml up -d --no-build dagster api mlflow minio influxdb labelstudio grafana'
+    - 'docker-compose -f docker-compose.yml ps'
