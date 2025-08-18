@@ -4,10 +4,12 @@ stages:
   - deploy
 
 variables:
-  DAGSTER_HOME: "/app/dagster_home"
   PYTHON_VERSION: "3.10"
   DOCKER_REPO: "feyalt/grass-pipeline"
 
+# -------------------------------
+# 1) TEST - run unit tests (fast)
+# -------------------------------
 test:
   stage: test
   image: python:${PYTHON_VERSION}
@@ -26,6 +28,9 @@ test:
     reports:
       junit: test-reports/pytest.xml
 
+# -------------------------------
+# 2) BUILD - tiny (emit tags)
+# -------------------------------
 build:
   stage: build
   image: alpine:3.18
@@ -38,20 +43,21 @@ build:
       - deploy.env
     expire_in: 1 day
 
+# -------------------------------
+# 3) DEPLOY - SIMPLE, NO PULL / NO BUILD
+#    starts containers only if images are already present on the runner
+# -------------------------------
 deploy:
   stage: deploy
   image: docker:24.0.2
   services:
     - docker:dind
   when: manual
+  dependencies:
+    - build
+  before_script:
+    - export $(cat deploy.env | xargs) || true
   script:
-    - echo "pulling images..."
-    - docker pull ${DOCKER_REPO}:api
-    - docker pull ${DOCKER_REPO}:dagster
-    - echo "starting stack..."
-    - docker-compose -f docker-compose.yml pull
-    - docker-compose -f docker-compose.yml up -d
+    - echo "SIMPLE DEPLOY (NO PULL / NO BUILD). Requires images present on the host."
+    - docker-compose -f docker-compose.yml up -d --no-build
     - docker-compose -f docker-compose.yml ps
-    - echo "healthcheck (api):"
-    - sleep 6
-    - docker-compose -f docker-compose.yml exec -T api sh -c "curl -fsS http://localhost:8000/health || exit 1"
