@@ -1,17 +1,16 @@
 stages:
   - test
+  - build
   - deploy
 
 variables:
   DAGSTER_HOME: "/app/dagster_home"
   PYTHON_VERSION: "3.10"
+  DOCKER_REPO: "feyalt/grass-pipeline"
 
-# -------------------------------
-# UNIT TESTS (Lightweight & Fast)
-# -------------------------------
 test:
   stage: test
-  image: python:$PYTHON_VERSION
+  image: python:${PYTHON_VERSION}
   before_script:
     - export PYTHONPATH="$CI_PROJECT_DIR/grass_pipeline_dagster"
   script:
@@ -27,24 +26,65 @@ test:
     reports:
       junit: test-reports/pytest.xml
 
-# -------------------------------
-# DEPLOY (manual) — Pull prebuilt images & start stack
-# -------------------------------
+build:
+  stage: build
+  image: alpine:3.18
+  script:
+    - echo "API_TAG=api" > deploy.env
+    - echo "DAGSTER_TAG=dagster" >> deploy.env
+    - cat deploy.env
+  artifacts:
+    paths:
+      - deploy.env
+    expire_in: 1 day
+
 deploy:
   stage: deploy
   image: docker:24.0.2
   services:
     - docker:dind
   when: manual
+  dependencies:
+    - build
   before_script:
-    # If your registry is private, set DOCKER_HUB_USERNAME/DOCKER_HUB_PASSWORD as GitLab CI variables
+    # login if credentials provided (optional)
     - '[ -n "$DOCKER_HUB_USERNAME" ] && echo "$DOCKER_HUB_PASSWORD" | docker login -u "$DOCKER_HUB_USERNAME" --password-stdin || true'
+    - export $(cat deploy.env | xargs) || true
   script:
-    # Verify / pull the images you already have on Docker Hub
-    - docker pull feyalt/grass-pipeline:api
-    - docker pull feyalt/grass-pipeline:dagster
+    - |
+      set +e
+      rm -f /tmp/deploy.log || true
+      echo "Pulling ${DOCKER_REPO}:${API_TAG} ..."
+      docker pull "${DOCKER_REPO}:${API_TAG}" 2>&1 | tee -a /tmp/deploy.log
+      echo "Pulling ${DOCKER_REPO}:${DAGSTER_TAG} ..."
+      docker pull "${DOCKER_REPO}:${DAGSTER_TAG}" 2>&1 | tee -a /tmp/deploy.log
+      echo "docker-compose pull ..."
+      docker-compose -f docker-compose.yml pull 2>&1 | tee -a /tmp/deploy.log
+      echo "docker-compose up -d ..."
+      docker-compose -f docker-compose.yml up -d 2>&1 | tee -a /tmp/deploy.log
+      echo "docker-compose ps ..."
+      docker-compose -f docker-compose.yml ps 2>&1 | tee -a /tmp/deploy.log || true
 
-    # Pull any other images referenced in docker-compose and bring the stack up
-    - docker-compose pull
-    - docker-compose -f docker-compose.yml up -d
-    - docker-compose ps
+      if grep -Ei "no space left on device|failed to register layer|write .* no space left" /tmp/deploy.log >/dev/null 2>&1; then
+        echo ""
+        echo "⚠️  Disk/extraction error detected (likely runner out of disk)."
+        echo "Run these commands on a machine you control (laptop / VM / self-hosted runner):"
+        echo ""
+        echo "  docker pull ${DOCKER_REPO}:${API_TAG}"
+        echo "  docker pull ${DOCKER_REPO}:${DAGSTER_TAG}"
+        echo ""
+        echo "  API_TAG=${API_TAG} DAGSTER_TAG=${DAGSTER_TAG} docker-compose -f docker-compose.yml pull"
+        echo "  API_TAG=${API_TAG} DAGSTER_TAG=${DAGSTER_TAG} docker-compose -f docker-compose.yml up -d"
+        echo ""
+        exit 0
+      fi
+
+      # if any command failed (non-disk), return non-zero so the job fails
+      LAST_RC=${PIPESTATUS[0]}
+      if [ "$LAST_RC" -ne 0 ]; then
+        echo "ERROR: deploy failed (see /tmp/deploy.log)"
+        tail -n 200 /tmp/deploy.log || true
+        exit $LAST_RC
+      fi
+
+      echo "Deploy completed."
