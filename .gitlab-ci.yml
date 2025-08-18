@@ -1,11 +1,13 @@
 stages:
   - test
-  - run
+  - build
   - deploy
 
 variables:
   DAGSTER_HOME: "/app/dagster_home"
   PYTHON_VERSION: "3.10"
+  DOCKER_TLS_CERTDIR: ""
+  REGISTRY: docker.io/feyalt/grass-pipeline
 
 # -------------------------------
 # UNIT TESTS (Lightweight & Fast)
@@ -19,7 +21,7 @@ test:
     - python -m pip install --upgrade pip
     - python -m pip install -r grass_pipeline_dagster/requirements.dagster.txt
     - python -m pip install pytest pytest-mock
-    - python -m pytest tests/
+    - python -m pytest tests/ --maxfail=1 --disable-warnings -q
   artifacts:
     when: always
     paths:
@@ -28,26 +30,31 @@ test:
       junit: test-reports/pytest.xml
 
 # -------------------------------
-# STACK TEST (Optional Manual Local Stack Boot)
+# BUILD & PUSH IMAGES (Dagster + API only)
 # -------------------------------
-run:
-  stage: run
+build-images:
+  stage: build
   image: docker:24.0.2
   services:
     - docker:dind
-  when: manual
-  variables:
-    DOCKER_TLS_CERTDIR: ""
-    DOCKER_DRIVER: overlay2
   script:
-    - docker-compose -f docker-compose.yml up -d
-    - sleep 20
-    - docker-compose ps
-    - docker-compose logs dagster || true
-    - docker-compose down
+    # Hardcoded Docker Hub login (use CI/CD variables in future)
+    - echo "dckr_pat_IJhYxUAPyNk1eusOAiTIDtLK8xk" | docker login -u "feyalt" --password-stdin
+
+    # Build Dagster
+    - docker build -f grass_pipeline_dagster/Dockerfile.dagster \
+        -t $REGISTRY:dagster .
+
+    # Build API
+    - docker build -f api/Dockerfile.api \
+        -t $REGISTRY:api .
+
+    # Push both
+    - docker push $REGISTRY:dagster
+    - docker push $REGISTRY:api
 
 # -------------------------------
-# OPTIONAL MANUAL DEPLOYMENT (FROM EXISTING DOCKERFILES)
+# OPTIONAL MANUAL DEPLOYMENT
 # -------------------------------
 deploy:
   stage: deploy
@@ -56,10 +63,10 @@ deploy:
     - docker:dind
   when: manual
   variables:
-    DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
   script:
-    - echo "Deploying local stack (no rebuild)..."
+    - echo "Deploying local stack (pulling latest images)..."
+    - docker-compose pull
     - docker-compose -f docker-compose.yml up -d
     - docker-compose ps
     - echo "Deployment complete."
