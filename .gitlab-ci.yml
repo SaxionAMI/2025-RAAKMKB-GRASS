@@ -1,13 +1,10 @@
 stages:
   - test
-  - build
   - deploy
 
 variables:
   DAGSTER_HOME: "/app/dagster_home"
   PYTHON_VERSION: "3.10"
-  DOCKER_TLS_CERTDIR: ""
-  REGISTRY: docker.io/feyalt/grass-pipeline
 
 # -------------------------------
 # UNIT TESTS (Lightweight & Fast)
@@ -21,7 +18,8 @@ test:
     - python -m pip install --upgrade pip
     - python -m pip install -r grass_pipeline_dagster/requirements.dagster.txt
     - python -m pip install pytest pytest-mock
-    - python -m pytest tests/ --maxfail=1 --disable-warnings -q
+    - mkdir -p test-reports
+    - python -m pytest tests/ --maxfail=1 --disable-warnings -q --junitxml=test-reports/pytest.xml
   artifacts:
     when: always
     paths:
@@ -30,29 +28,7 @@ test:
       junit: test-reports/pytest.xml
 
 # -------------------------------
-# BUILD & PUSH IMAGES (Dagster + API only)
-# -------------------------------
-build-images:
-  stage: build
-  image: docker:24.0.2
-  services:
-    - docker:dind
-  script:
-    # Hardcoded Docker Hub login (use CI/CD variables later for safety)
-    - echo "dckr_pat_IJhYxUAPyNk1eusOAiTIDtLK8xk" | docker login -u "feyalt" --password-stdin
-
-    # Build Dagster (no stray backslashes)
-    - docker build -f grass_pipeline_dagster/Dockerfile.dagster -t $REGISTRY:dagster .
-
-    # Build API
-    - docker build -f api/Dockerfile.api -t $REGISTRY:api .
-
-    # Push both
-    - docker push $REGISTRY:dagster
-    - docker push $REGISTRY:api
-
-# -------------------------------
-# OPTIONAL MANUAL DEPLOYMENT
+# DEPLOY (manual) — Pull prebuilt images & start stack
 # -------------------------------
 deploy:
   stage: deploy
@@ -60,11 +36,15 @@ deploy:
   services:
     - docker:dind
   when: manual
-  variables:
-    DOCKER_DRIVER: overlay2
+  before_script:
+    # If your registry is private, set DOCKER_HUB_USERNAME/DOCKER_HUB_PASSWORD as GitLab CI variables
+    - '[ -n "$DOCKER_HUB_USERNAME" ] && echo "$DOCKER_HUB_PASSWORD" | docker login -u "$DOCKER_HUB_USERNAME" --password-stdin || true'
   script:
-    - echo "Deploying local stack (pulling latest images)..."
+    # Verify / pull the images you already have on Docker Hub
+    - docker pull feyalt/grass-pipeline:api
+    - docker pull feyalt/grass-pipeline:dagster
+
+    # Pull any other images referenced in docker-compose and bring the stack up
     - docker-compose pull
     - docker-compose -f docker-compose.yml up -d
     - docker-compose ps
-    - echo "Deployment complete."
