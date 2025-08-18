@@ -53,11 +53,7 @@ deploy:
   services:
     - docker:dind
   when: manual
-  dependencies:
-    - build
-  before_script:
-    - export $(cat deploy.env | xargs) || true
   script:
-    - echo "SIMPLE DEPLOY (NO PULL / NO BUILD). Requires images present on the host."
-    - docker-compose -f docker-compose.yml up -d --no-build
+    - echo "Deploy: starting core services only (realtime skipped)"
+    - docker-compose -f docker-compose.yml up -d --no-build dagster api mlflow minio influxdb labelstudio grafana
     - docker-compose -f docker-compose.yml ps
