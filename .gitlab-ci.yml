@@ -38,16 +38,14 @@ build-images:
   services:
     - docker:dind
   script:
-    # Hardcoded Docker Hub login (use CI/CD variables in future)
+    # Hardcoded Docker Hub login (use CI/CD variables later for safety)
     - echo "dckr_pat_IJhYxUAPyNk1eusOAiTIDtLK8xk" | docker login -u "feyalt" --password-stdin
 
-    # Build Dagster
-    - docker build -f grass_pipeline_dagster/Dockerfile.dagster \
-        -t $REGISTRY:dagster .
+    # Build Dagster (no stray backslashes)
+    - docker build -f grass_pipeline_dagster/Dockerfile.dagster -t $REGISTRY:dagster .
 
     # Build API
-    - docker build -f api/Dockerfile.api \
-        -t $REGISTRY:api .
+    - docker build -f api/Dockerfile.api -t $REGISTRY:api .
 
     # Push both
     - docker push $REGISTRY:dagster
