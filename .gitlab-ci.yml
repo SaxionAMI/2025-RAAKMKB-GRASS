@@ -7,9 +7,7 @@ variables:
   PYTHON_VERSION: "3.10"
   DOCKER_REPO: "feyalt/grass-pipeline"
 
-# -------------------------------
 # 1) TEST - run unit tests (fast)
-# -------------------------------
 test:
   stage: test
   image: python:${PYTHON_VERSION}
@@ -28,9 +26,7 @@ test:
     reports:
       junit: test-reports/pytest.xml
 
-# -------------------------------
 # 2) BUILD - tiny (emit tags)
-# -------------------------------
 build:
   stage: build
   image: alpine:3.18
@@ -43,21 +39,28 @@ build:
       - deploy.env
     expire_in: 1 day
 
-# -------------------------------
-# 3) DEPLOY - start required services only (realtime skipped)
-#    This uses --no-build so CI will not build or extract images.
-# -------------------------------
+# 3) DEPLOY - NO DOCKER on runner (prints exact local commands)
+# This will NOT attempt docker pull/extract on the shared runner.
 deploy:
   stage: deploy
-  image: docker:24.0.2
-  services:
-    - docker:dind
+  image: alpine:3.18
   when: manual
   dependencies:
     - build
   before_script:
     - export $(cat deploy.env | xargs) || true
   script:
-    - 'echo "Deploy: starting core services only (realtime skipped)"'
-    - 'docker-compose -f docker-compose.yml up -d --no-build dagster api mlflow minio influxdb labelstudio grafana'
-    - 'docker-compose -f docker-compose.yml ps'
+    - echo "Runner will NOT pull or extract images. Use these commands on a machine you control (your laptop / self-hosted runner)."
+    - echo ""
+    - echo "1) (optional) fetch images from Hub locally:"
+    - echo "   docker pull ${DOCKER_REPO}:api"
+    - echo "   docker pull ${DOCKER_REPO}:dagster"
+    - echo ""
+    - echo "2) Start the stack locally (uses the images above):"
+    - echo "   API_TAG=${API_TAG:-api} DAGSTER_TAG=${DAGSTER_TAG:-dagster} docker-compose -f docker-compose.yml pull"
+    - echo "   API_TAG=${API_TAG:-api} DAGSTER_TAG=${DAGSTER_TAG:-dagster} docker-compose -f docker-compose.yml up -d"
+    - echo ""
+    - echo "3) (optional) quick healthcheck:"
+    - echo "   sleep 6 && docker-compose -f docker-compose.yml exec -T api sh -c 'curl -fsS http://localhost:8000/health || (echo \"API health failed\" && exit 1)'"
+    - echo ""
+    - echo "If you need CI to do the pull/start, run CI on a self-hosted runner with plenty of disk (or preload images onto the runner using docker load)."
