@@ -3,6 +3,7 @@ matplotlib.use('Agg')
 
 import os
 import sys
+import math
 import torch
 import torchvision.transforms as transforms
 from PIL import Image
@@ -27,12 +28,13 @@ settings = load_settings()
 model_path = os.path.abspath(settings["model_path"])
 class_labels = [label.lower() for label in settings["class_labels"]]
 segment_duration = float(settings["segment_duration"])
-segment_overlap = float(settings["segment_overlap"])
+segment_overlap  = float(settings["segment_overlap"])
 
-# --- tiny, optional guards (tunable via env; safe defaults) ---
-MIN_CONF = float(os.getenv("LS_MIN_CONF", "0.0"))               # e.g., 0.5 to require stronger predictions
-BRIDGE_NEUTRAL_GAP_SEC = float(os.getenv("LS_BRIDGE_NEUTRAL_GAP_SEC", "0.0"))  # e.g., 0.5 to merge tiny neutral gaps
-NEUTRAL_LABEL = "neutral"
+# --- Derive hop-aware dynamics (no magic numbers) ---
+hop_sec = max(1e-6, segment_duration - segment_overlap)
+H_MIN = max(1, math.ceil(segment_duration / hop_sec))                 # min region length in hops
+DWELL_HOPS = H_MIN                                                    # require this many consecutive hops to switch
+BRIDGE_K_HOPS = max(0, math.ceil(segment_overlap / hop_sec))          # bridge pinholes up to overlap width
 
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
@@ -84,8 +86,108 @@ if not try_load_from_minio():
         raise RuntimeError(f"Failed to load model from MinIO and local: {e}")
 
 def _capitalize_label(lbl: str) -> str:
-    # 'disapproval' -> 'Disapproval', etc.
     return lbl.capitalize()
+
+# ====== Hop-grid, labels-only smoothing helpers ======
+
+def _stable_labels_with_dwell(hop_labels, dwell_hops: int):
+    """
+    Require a new candidate label to persist for 'dwell_hops' consecutive hops
+    before switching. Purely labels-based (class- and confidence-agnostic).
+    """
+    if not hop_labels:
+        return []
+    stable = [hop_labels[0]]
+    cur = hop_labels[0]
+    streak = 0
+    for lab in hop_labels[1:]:
+        if lab == cur:
+            streak = 0
+        else:
+            streak += 1
+            if streak >= dwell_hops:
+                cur = lab
+                streak = 0
+        stable.append(cur)
+    return stable
+
+def _hops_to_regions(hop_labels, hop_sec: float, segment_duration: float):
+    """
+    Convert per-hop labels to contiguous regions for LS.
+    Boundaries snap to hop starts; last region ends at last hop start + segment_duration.
+    """
+    regions = []
+    if not hop_labels:
+        return regions
+    cur = hop_labels[0]
+    start = 0.0
+    for i in range(1, len(hop_labels)):
+        if hop_labels[i] != cur:
+            end = i * hop_sec
+            regions.append({"start": start, "end": end, "label": _capitalize_label(cur), "score": 0.0})
+            cur = hop_labels[i]
+            start = end
+    end = (len(hop_labels) - 1) * hop_sec + segment_duration
+    regions.append({"start": start, "end": end, "label": _capitalize_label(cur), "score": 0.0})
+    return regions
+
+def _bridge_pinhole(regions, hop_sec: float, k_hops: int):
+    """
+    Bridge tiny middle regions of <= k_hops where left and right labels match.
+    """
+    if len(regions) < 3 or k_hops <= 0:
+        return regions
+    max_gap = k_hops * hop_sec
+    i = 1
+    while i < len(regions) - 1:
+        L, M, R = regions[i - 1], regions[i], regions[i + 1]
+        if L["label"].lower() == R["label"].lower() and (M["end"] - M["start"]) <= max_gap:
+            L["end"] = R["end"]
+            del regions[i:i + 2]
+        else:
+            i += 1
+    return regions
+
+def _enforce_min_region_hops(regions, hop_sec: float, segment_duration: float):
+    """
+    Ensure each region spans at least H_MIN hops (derived from settings).
+    Prefer L+M+R merge when L==R; otherwise absorb into the longer neighbor.
+    """
+    if len(regions) <= 1:
+        return regions
+    H_MIN_local = max(1, math.ceil(segment_duration / hop_sec))
+
+    def hops(r):
+        return max(1, int(round((r["end"] - r["start"]) / hop_sec + 1e-6)))
+    def dur(r):
+        return r["end"] - r["start"]
+
+    i = 0
+    while i < len(regions):
+        r = regions[i]
+        if hops(r) >= H_MIN_local:
+            i += 1
+            continue
+
+        left  = regions[i - 1] if i - 1 >= 0 else None
+        right = regions[i + 1] if i + 1 < len(regions) else None
+
+        if left and right and left["label"].lower() == right["label"].lower():
+            left["end"] = right["end"]
+            del regions[i:i + 2]
+            continue
+
+        if left and (not right or dur(left) >= dur(right)):
+            left["end"] = max(left["end"], r["end"])
+            del regions[i]
+        elif right:
+            right["start"] = min(right["start"], r["start"])
+            del regions[i]
+        else:
+            i += 1
+    return regions
+
+# ====== Main classification ======
 
 def classify_audio(audio_path: str):
     """
@@ -114,14 +216,13 @@ def classify_audio(audio_path: str):
     audio_np /= (np.std(audio_np) + 1e-8)
 
     # --- Segment ---
-    hop_sec = max(1e-6, segment_duration - segment_overlap)
     segments = segment_audio(audio_np, sample_rate, segment_duration, hop_sec)
     print(f"{0 if segments is None else len(segments)} segments created")
     if len(segments) == 0:
         raise RuntimeError("No segments available after segmentation")
 
-    # --- Per-segment inference ---
-    segment_preds = []
+    # --- Per-segment inference (labels only; confidence ignored) ---
+    hop_labels = []
     for i, segment in enumerate(segments):
         image_path = None
         try:
@@ -155,80 +256,29 @@ def classify_audio(audio_path: str):
 
             pred_idx = int(np.argmax(probs))
             pred_label = class_labels[pred_idx]
-            confidence = float(probs[pred_idx])
-
-            # Optional confidence guard: low-conf -> neutral
-            if MIN_CONF > 0.0 and confidence < MIN_CONF:
-                pred_label = NEUTRAL_LABEL
-
-            t0 = i * hop_sec
-            t1 = t0 + segment_duration
-            segment_preds.append({
-                "start": t0,
-                "end": t1,
-                "label": pred_label,
-                "conf": confidence
-            })
+            hop_labels.append(pred_label)
 
             print("Seg {}: ".format(i) + ", ".join(
                 f"{lbl}={probs[j]:.2f}" for j, lbl in enumerate(class_labels)
-            ) + f" | chosen={pred_label} ({confidence:.2f})")
+            ) + f" | chosen={pred_label}")
 
         except Exception as e:
             print(f"⚠️ Segment {i} failed:", e)
+            # fallback: keep timeline length; repeat previous or default to first class
+            hop_labels.append(hop_labels[-1] if hop_labels else class_labels[0])
         finally:
             if image_path and os.path.exists(image_path):
                 os.remove(image_path)
 
-    if not segment_preds:
-        raise RuntimeError("No segment predictions")
+    # --- Labels-only smoothing on hop grid ---
+    stable_labels = _stable_labels_with_dwell(hop_labels, dwell_hops=DWELL_HOPS)
 
-    # --- Collapse consecutive same labels into non-overlapping regions ---
-    regions = []
-    current = segment_preds[0].copy()
-    for seg in segment_preds[1:]:
-        if seg["label"] != current["label"]:
-            # boundary at start of new segment -> no overlap
-            regions.append({
-                "start": current["start"],
-                "end": seg["start"],
-                "label": _capitalize_label(current["label"]),
-                "score": current.get("conf", 0.0)
-            })
-            current = seg.copy()
-        else:
-            # extend current region to this segment's end
-            current["end"] = seg["end"]
-            current["conf"] = max(current.get("conf", 0.0), seg.get("conf", 0.0))
-    # close last region
-    regions.append({
-        "start": current["start"],
-        "end": current["end"],
-        "label": _capitalize_label(current["label"]),
-        "score": current.get("conf", 0.0)
-    })
-
-    # --- Optional: bridge tiny NEUTRAL gaps between same labels on both sides ---
-    if BRIDGE_NEUTRAL_GAP_SEC > 0 and len(regions) >= 3:
-        changed = True
-        while changed:
-            changed = False
-            i = 1
-            while i < len(regions) - 1:
-                mid = regions[i]
-                left = regions[i - 1]
-                right = regions[i + 1]
-                if (mid["label"].lower() == NEUTRAL_LABEL and
-                    (mid["end"] - mid["start"]) <= BRIDGE_NEUTRAL_GAP_SEC and
-                    left["label"] == right["label"]):
-                    # merge left + mid + right into one region
-                    left["end"] = right["end"]
-                    # drop mid and right
-                    del regions[i:i+2]
-                    changed = True
-                else:
-                    i += 1
+    # --- Convert to LS regions, then fix tiny artifacts ---
+    regions = _hops_to_regions(stable_labels, hop_sec, segment_duration)
+    regions = _bridge_pinhole(regions, hop_sec, BRIDGE_K_HOPS)
+    regions = _enforce_min_region_hops(regions, hop_sec, segment_duration)
 
     print(f"Generated {len(regions)} regions: {regions}")
-    # LS only needs start/end/label; score kept for debugging if you want it upstream
+
+    # LS start/end/label
     return [{"start": r["start"], "end": r["end"], "label": r["label"]} for r in regions]

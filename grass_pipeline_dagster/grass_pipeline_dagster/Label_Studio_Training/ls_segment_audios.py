@@ -31,17 +31,6 @@ ENV_MEDIA_VARS = ["LABEL_STUDIO_MEDIA_DIR", "LS_MEDIA_DIR", "LOCAL_LABEL_STUDIO_
 def resolve_audio_path(input_path):
     """
     Robust path resolution for audio files coming from Label Studio or API.
-
-    Tries, in order:
-      1. If provided path is absolute and exists -> return
-      2. AUDIO_BASE/<basename>
-      3. fallback bases (AUDIO_BASE siblings) + basename
-      4. preserve relative path under common roots (/data, /data/media, /data/upload)
-      5. environment configured media roots
-      6. project-local label_studio_data/media/* (useful for local dev)
-      7. rglob search under common roots
-      8. finally try the as-given path
-    Raises FileNotFoundError listing tried candidates if not found.
     """
     logger = get_dagster_logger()
     p = Path(str(input_path))
@@ -147,6 +136,7 @@ def ls_segment_audios():
     settings = load_settings()
     segment_duration = float(settings["segment_duration"])
     segment_overlap = float(settings["segment_overlap"])
+    hop_sec = max(1e-6, segment_duration - segment_overlap)
 
     export_files = sorted(
         [f for f in LS_EXPORT_DIR.glob("*.json") if not str(f).endswith("-info.json")],
@@ -203,7 +193,7 @@ def ls_segment_audios():
             logger.warning(f"Failed to read {audio_path}: {e}")
             continue
 
-        segments = segment_audio(audio_np, sample_rate, segment_duration, segment_overlap)
+        segments = segment_audio(audio_np, sample_rate, segment_duration, hop_sec)
         logger.info(f"{len(segments)} segments created for {audio_path}")
 
         for seg_index, segment in enumerate(segments):
@@ -279,11 +269,8 @@ def _save_segment_spectrogram_and_return(path_folder: Path, audio_id: str, seg_i
 def ls_segment_audios_incremental(audio_path: str, label: str = None, segments: List[dict] = None) -> List[Tuple[str, str]]:
     """
     2 modes:
-      - If `segments` is None: behave like previous incremental segmentation:
-           segment audio using segment_audio(...) and label each with `label`
-           (so label must be provided).
-      - If `segments` is provided: segments is a list of dicts with {start, end, label}
-           -> produce spectrogram images only for those ranges and use their labels.
+      - If `segments` is None: segment full audio with pipeline settings; each slice labeled with `label`.
+      - If `segments` provided: for each {start,end,label} region, re-segment with pipeline settings; each slice inherits region label.
 
     Returns list of tuples: (image_path, label)
     """
@@ -293,8 +280,8 @@ def ls_segment_audios_incremental(audio_path: str, label: str = None, segments: 
 
     settings = load_settings()
     segment_duration = float(settings["segment_duration"])
-    # segment_overlap not needed when segments provided but load for completeness
     segment_overlap = float(settings["segment_overlap"])
+    hop_sec = max(1e-6, segment_duration - segment_overlap)
 
     # Resolve audio path robustly
     try:
@@ -319,7 +306,7 @@ def ls_segment_audios_incremental(audio_path: str, label: str = None, segments: 
         logger.error(f"Failed to read {audio_path}: {e}")
         return []
 
-    # Mode A: provided segments (use start/end times)
+    # Mode A: provided segments (use start/end times; re-segment inside)
     if segments:
         logger.info(f"Using provided {len(segments)} segments for audio: {audio_path}")
         # Ensure segments are sorted by start time
@@ -328,7 +315,6 @@ def ls_segment_audios_incremental(audio_path: str, label: str = None, segments: 
         except Exception:
             sorted_segments = segments
 
-        out_folder_map = {}
         for seg_index, seg in enumerate(sorted_segments):
             try:
                 start = float(seg["start"])
@@ -338,7 +324,6 @@ def ls_segment_audios_incremental(audio_path: str, label: str = None, segments: 
                 logger.warning(f"Skipping malformed segment entry: {seg} ({e})")
                 continue
 
-            # create folder per label
             out_folder = out_base / (seg_label or "unknown")
             out_folder.mkdir(parents=True, exist_ok=True)
 
@@ -351,18 +336,23 @@ def ls_segment_audios_incremental(audio_path: str, label: str = None, segments: 
                 logger.warning(f"Invalid segment samples for {seg}: start_sample={start_sample}, end_sample={end_sample}")
                 continue
 
-            segment_array = audio_np[start_sample:end_sample]
-            # Use requested duration for plotting's X extent:
-            duration_for_extent = (end - start) if (end - start) > 0 else segment_duration
+            # Slice region audio
+            region_audio = audio_np[start_sample:end_sample]
 
-            image_path = _save_segment_spectrogram_and_return(out_folder, audio_id, seg_index, segment_array, sample_rate, duration_for_extent)
-            logger.info(f"LS: Saved spectrogram image for provided segment: {image_path}")
-            segment_paths.append((image_path, seg_label))
+            # Re-segment region using pipeline settings
+            region_segments = segment_audio(region_audio, sample_rate, segment_duration, hop_sec)
+            logger.info(f"{len(region_segments)} sub-segments created for region {seg_index} ({start:.2f}-{end:.2f}s, label={seg_label})")
+
+            for j, segment in enumerate(region_segments):
+                image_path = _save_segment_spectrogram_and_return(
+                    out_folder, audio_id, f"{seg_index}_{j}", segment, sample_rate, segment_duration
+                )
+                segment_paths.append((image_path, seg_label))
 
         logger.info(f"Incremental (provided segments) complete for: {audio_path}")
         return segment_paths
 
-    # Mode B: no provided segments -> segment whole audio using segmentation logic and use single label
+    # Mode B: no provided segments -> segment whole audio using pipeline settings and use single label
     if not label:
         logger.error("No 'label' provided for full-audio segmentation mode.")
         return []
@@ -371,7 +361,7 @@ def ls_segment_audios_incremental(audio_path: str, label: str = None, segments: 
     out_folder.mkdir(parents=True, exist_ok=True)
 
     # Segment via existing algorithm
-    segments_auto = segment_audio(audio_np, sample_rate, segment_duration, segment_overlap)
+    segments_auto = segment_audio(audio_np, sample_rate, segment_duration, hop_sec)
     logger.info(f"{len(segments_auto)} segments created for {audio_path}")
 
     for seg_index, segment in enumerate(segments_auto):

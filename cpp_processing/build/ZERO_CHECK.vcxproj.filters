@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="16.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Gebruiker\Desktop\GRASS_Pipeline\cpp_processing\build\CMakeFiles\f0e18e7262ec2de85d631bdd6e208daa\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{25A9FADE-9773-389A-B81D-F46FEC17D1F8}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

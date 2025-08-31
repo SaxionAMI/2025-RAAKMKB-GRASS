@@ -54,3 +54,9 @@ data/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# prevent host build artifacts from entering the image context
+cpp_processing/build/
+cpp_processing/*.so
+cpp_processing/*.pyd
+cpp_processing/*.dll

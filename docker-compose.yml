@@ -15,6 +15,7 @@ services:
       - ./mlflow/artifacts:/app/mlartifacts
       - ./label_studio_data:/data
       - ./dagster_output:/app/dagster_output
+      - cpp_ext:/app/cpp_processing
     command: ["dagster", "dev", "-h", "0.0.0.0", "-p", "3000", "-f", "grass_pipeline_dagster/grass_pipeline_dagster/definitions.py"]
 
   mlflow:
@@ -87,6 +88,11 @@ services:
     volumes:
       - ./label_studio_data:/data
       - ./label_studio_data:/label-studio/data
+    environment:
+      - ML_TIMEOUT_PREDICT=3600
+      - ML_TIMEOUT_HEALTH=60
+      - ML_TIMEOUT_TRAIN=7200
+      - GUNICORN_CMD_ARGS=--timeout 36000 --graceful-timeout 36000 --workers 2
     restart: unless-stopped
   grafana: 
     image: grafana/grafana:10.3.3
@@ -114,3 +120,5 @@ services:
     depends_on:
       - influxdb
     restart: always
+volumes:
+  cpp_ext: {}

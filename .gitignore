@@ -14,6 +14,7 @@ venv/
 *.pt
 
 # === Output directories ===
+benchmark_out/
 dagster_home/
 dagster_output/
 mlflow/
@@ -27,6 +28,7 @@ influxdb_data/
 grafana_data/
 vcpkg/
 /benchmark_stft_comparison.py
+/live_audio_dashboard.py
 /count.py
 
 

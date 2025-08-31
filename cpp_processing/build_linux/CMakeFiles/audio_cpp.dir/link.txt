@@ -1,0 +1,1 @@
+/usr/bin/c++ -fPIC -O3 -DNDEBUG -shared  -o audio_cpp.so CMakeFiles/audio_cpp.dir/bindings.cpp.o CMakeFiles/audio_cpp.dir/processing.cpp.o  /usr/lib/x86_64-linux-gnu/libpython3.10.so /usr/lib/x86_64-linux-gnu/libfftw3f.so 

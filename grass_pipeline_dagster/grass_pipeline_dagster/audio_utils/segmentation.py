@@ -10,25 +10,52 @@ from dagster import get_dagster_logger
 
 from cpp_processing.segmenter import segment_audio
 from cpp_processing.spectrogram import compute_spectrogram
+# NEW: import the module itself so we can see its _HAS_CPP flag
+from cpp_processing import spectrogram as _spec
+
 from grass_pipeline_dagster.utils import load_settings, get_minio_client
 
 
 def segment_audio_files(audio_files: list) -> int:
     """
     Segments input audio files into overlapping 1D segments and saves spectrogram images.
-    NOTE: We treat settings['segment_overlap'] as **overlap in seconds**.
+    NOTE: We treat settings['segment_overlap'] as overlap in seconds.
           We compute hop = segment_duration - segment_overlap before calling the segmenter.
 
     Returns:
         int: total number of spectrogram images saved (and uploaded to MinIO)
     """
     logger = get_dagster_logger()
+
+    # --- Backend announcement (once per run) ---
+    _has_cpp = bool(getattr(_spec, "_HAS_CPP", False))
+    _cpp_path = None
+    try:
+        import audio_cpp as _audio_cpp_mod  # pybind11 extension; .pyd on Windows, .so on Linux
+        _cpp_path = getattr(_audio_cpp_mod, "__file__", None)
+    except Exception:
+        _cpp_path = None
+
+    if _has_cpp:
+        if _cpp_path:
+            logger.info(f"Spectrogram backend: C++/FFTW via { _cpp_path }")
+        else:
+            logger.info("Spectrogram backend: C++/FFTW (audio_cpp path unavailable)")
+    else:
+        logger.info("Spectrogram backend: NumPy/np.fft (Python fallback).")
+        if _cpp_path:
+            logger.warning(
+                "audio_cpp is importable (%s) but compute_spectrogram() is not using it "
+                "(cpp_processing.spectrogram._HAS_CPP == False). Check module placement / imports.",
+                _cpp_path,
+            )
+
     settings = load_settings()
     minio_client = get_minio_client()
     bucket_name = "grass-pipeline"
 
     segment_duration = float(settings["segment_duration"])      # e.g., 1.0
-    overlap_sec = float(settings["segment_overlap"])            # e.g., 0.25  (desired overlap SECONDS)
+    overlap_sec = float(settings["segment_overlap"])            # e.g., 0.25 (desired overlap SECONDS)
     # Convert desired overlap to hop (step) seconds for the segmenter
     hop_sec = max(1e-6, segment_duration - overlap_sec)         # e.g., 0.75
 
