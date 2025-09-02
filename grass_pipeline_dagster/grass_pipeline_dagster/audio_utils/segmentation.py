@@ -11,7 +11,7 @@ from botocore.exceptions import ClientError  # <- added
 
 from cpp_processing.segmenter import segment_audio
 from cpp_processing.spectrogram import compute_spectrogram
-# NEW: import the module itself so we can see its _HAS_CPP flag
+# check cpp integration flag
 from cpp_processing import spectrogram as _spec
 
 from grass_pipeline_dagster.utils import load_settings, get_minio_client
@@ -28,11 +28,11 @@ def segment_audio_files(audio_files: list) -> int:
     """
     logger = get_dagster_logger()
 
-    # --- Backend announcement (once per run) ---
+    # cpp announcement ---
     _has_cpp = bool(getattr(_spec, "_HAS_CPP", False))
     _cpp_path = None
     try:
-        import audio_cpp as _audio_cpp_mod  # pybind11 extension; .pyd on Windows, .so on Linux
+        import audio_cpp as _audio_cpp_mod  # pybind11 extension
         _cpp_path = getattr(_audio_cpp_mod, "__file__", None)
     except Exception:
         _cpp_path = None
@@ -55,7 +55,7 @@ def segment_audio_files(audio_files: list) -> int:
     minio_client = get_minio_client()
     bucket_name = "grass-pipeline"
 
-    # --- Ensure bucket exists before uploads ---
+    # Ensure bucket exists before uploads ---
     try:
         minio_client.head_bucket(Bucket=bucket_name)
         logger.info(f"MinIO bucket '{bucket_name}' already exists.")
@@ -109,7 +109,7 @@ def segment_audio_files(audio_files: list) -> int:
         audio_np = audio_np.astype(np.float32)
         audio_np = (audio_np - np.mean(audio_np)) / (np.std(audio_np) + 1e-8)
 
-        # >>> IMPORTANT: call segmenter with hop_sec (computed from desired overlap) <<<
+        #  call segmenter with hop_sec <<<
         segments = segment_audio(audio_np, sample_rate, segment_duration, hop_sec)
         logger.info(f" {len(segments)} segments created.")
 

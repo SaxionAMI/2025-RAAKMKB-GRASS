@@ -26,7 +26,7 @@ test:
     reports:
       junit: test-reports/pytest.xml
 
-# 2) BUILD - tiny (emit tags)
+# 2) BUILD
 build:
   stage: build
   image: alpine:3.18
@@ -40,7 +40,7 @@ build:
     expire_in: 1 day
 
 # 3) DEPLOY - NO DOCKER on runner (prints exact local commands)
-# This will NOT attempt docker pull/extract on the shared runner.
+# This will NOT attempt docker pull/extract on the shared runner bcz we don't have enough space for it in our Gitlab atm:)
 deploy:
   stage: deploy
   image: alpine:3.18

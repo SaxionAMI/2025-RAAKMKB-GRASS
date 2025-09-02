@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from scipy.io import wavfile
 import torchaudio
 
-# === Manually add project root to sys.path ===
+# adding project root to sys.path ===
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "grass_pipeline_dagster"))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
@@ -30,7 +30,7 @@ class_labels = [label.lower() for label in settings["class_labels"]]
 segment_duration = float(settings["segment_duration"])
 segment_overlap  = float(settings["segment_overlap"])
 
-# --- Derive hop-aware dynamics (no magic numbers) ---
+# --- Derive hop-aware dynamics ---
 hop_sec = max(1e-6, segment_duration - segment_overlap)
 H_MIN = max(1, math.ceil(segment_duration / hop_sec))                 # min region length in hops
 DWELL_HOPS = H_MIN                                                    # require this many consecutive hops to switch
@@ -51,7 +51,7 @@ def try_load_from_minio():
     Returns True if successful, False otherwise.
     """
     minio_bucket = "grass-pipeline"
-    minio_object = "models/cnn/latest/cnn_model.pth"
+    minio_object = "models/ls/latest/ls_cnn_model.pth"
     client = get_minio_client()
     with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as tmp_file:
         try:
@@ -264,13 +264,12 @@ def classify_audio(audio_path: str):
 
         except Exception as e:
             print(f"⚠️ Segment {i} failed:", e)
-            # fallback: keep timeline length; repeat previous or default to first class
             hop_labels.append(hop_labels[-1] if hop_labels else class_labels[0])
         finally:
             if image_path and os.path.exists(image_path):
                 os.remove(image_path)
 
-    # --- Labels-only smoothing on hop grid ---
+    # --- Labels smoothing ---
     stable_labels = _stable_labels_with_dwell(hop_labels, dwell_hops=DWELL_HOPS)
 
     # --- Convert to LS regions, then fix tiny artifacts ---
