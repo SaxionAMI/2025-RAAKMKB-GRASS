@@ -7,6 +7,7 @@ import gc
 from scipy.io import wavfile
 import torchaudio
 from dagster import get_dagster_logger
+from botocore.exceptions import ClientError  # <- added
 
 from cpp_processing.segmenter import segment_audio
 from cpp_processing.spectrogram import compute_spectrogram
@@ -53,6 +54,20 @@ def segment_audio_files(audio_files: list) -> int:
     settings = load_settings()
     minio_client = get_minio_client()
     bucket_name = "grass-pipeline"
+
+    # --- Ensure bucket exists before uploads ---
+    try:
+        minio_client.head_bucket(Bucket=bucket_name)
+        logger.info(f"MinIO bucket '{bucket_name}' already exists.")
+    except ClientError:
+        logger.warning(f"MinIO bucket '{bucket_name}' not found. Creating it...")
+        try:
+            # For MinIO/S3-compatible endpoints, no LocationConstraint needed in most setups.
+            minio_client.create_bucket(Bucket=bucket_name)
+            logger.info(f"MinIO bucket '{bucket_name}' created successfully.")
+        except Exception as e:
+            logger.error(f"Failed to create MinIO bucket '{bucket_name}': {e}")
+            raise
 
     segment_duration = float(settings["segment_duration"])      # e.g., 1.0
     overlap_sec = float(settings["segment_overlap"])            # e.g., 0.25 (desired overlap SECONDS)
