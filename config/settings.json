@@ -7,5 +7,5 @@
   "class_labels": ["approval", "disapproval", "neutral"],
   "force_retrain": true,
   "resume_from_ls_model": false,
-  "ls_training_epochs": 3
+  "ls_training_epochs": 5
 }

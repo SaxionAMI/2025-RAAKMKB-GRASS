@@ -17,6 +17,7 @@ from grass_pipeline_dagster.utils import load_settings, get_minio_client
 
 class IncrementalSpectrogramDataset(Dataset):
     def __init__(self, data, transform=None):
+        # data: list[tuple[path:str, label:str]]
         self.data = data
         self.transform = transform
         settings = load_settings()
@@ -47,7 +48,7 @@ def train_on_ls_data(segments: list[tuple[str, str]]) -> str:
     settings = load_settings()
     class_labels = settings["class_labels"]
     num_classes = len(class_labels)
-    num_epochs = settings.get("ls_training_epochs", 3)
+    num_epochs = int(settings.get("ls_training_epochs", 3))
 
     if not segments:
         raise ValueError("No segments provided for training.")
@@ -60,51 +61,70 @@ def train_on_ls_data(segments: list[tuple[str, str]]) -> str:
 
     logger.info(f"Received {len(segments)} corrected LS segments for training.")
 
-    # === DataLoader ===
+    # === Transforms: match main trainer (ImageNet normalization) ===
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
-        transforms.ToTensor()
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225]),
     ])
     dataset = IncrementalSpectrogramDataset(segments, transform=transform)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
-    # === Class balancing ===
+    # === Class balancing (case-safe) ===
+    all_classes = [lbl.lower() for lbl in settings["class_labels"]]  # canonical
     label_series = [label.lower() for _, label in segments]
-    label_counts = {lbl: label_series.count(lbl) for lbl in class_labels}
-    min_count = min(label_counts.values())
-    max_count = max(label_counts.values())
-    imbalance_ratio = max_count / min_count if min_count > 0 else 1
-    use_weighted_loss = imbalance_ratio > 1.5
+
+    label_counts = {c: label_series.count(c) for c in all_classes}
+
+    min_count = min(label_counts.values()) if label_counts else 0
+    max_count = max(label_counts.values()) if label_counts else 0
+    imbalance_ratio = (max_count / max(1, min_count)) if max_count > 0 else 1.0
+    use_weighted_loss = imbalance_ratio > 1.5 and min_count > 0
 
     if use_weighted_loss:
         total = sum(label_counts.values())
-        weights = [total / (len(class_labels) * label_counts.get(lbl, 1)) for lbl in class_labels]
+        weights = [total / (len(all_classes) * max(1, label_counts[c])) for c in all_classes]
         class_weights = torch.tensor(weights, dtype=torch.float32)
         logger.info(f"Using weighted loss: {class_weights.tolist()}")
     else:
         class_weights = None
         logger.info("Using unweighted loss.")
 
-    # === Model ===
-    model = models.resnet18(pretrained=False)
-    model.fc = nn.Linear(model.fc.in_features, num_classes)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # === Resume from LS latest ===
-    resumed = False
+    # === Model init: match main trainer style (pretrained=True) ===
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = models.resnet18(pretrained=True)
+    model.fc = nn.Linear(model.fc.in_features, num_classes)
+
+    # === Resume order: LS -> CNN -> scratch (ImageNet init) ===
+    resume_source = "scratch"
     minio_bucket = "grass-pipeline"
-    minio_latest = "models/ls/latest/ls_cnn_model.pth"
-    try:
-        tmp_model_path = os.path.join(tempfile.gettempdir(), "resume_ls_model.pth")
-        get_minio_client().download_file(minio_bucket, minio_latest, tmp_model_path)
+    LS_LATEST  = "models/ls/latest/ls_cnn_model.pth"
+    CNN_LATEST = "models/cnn/latest/cnn_model.pth"
+
+    def _try_download(key: str, dst: str) -> bool:
+        try:
+            get_minio_client().download_file(minio_bucket, key, dst)
+            return True
+        except Exception:
+            return False
+
+    tmp_model_path = os.path.join(tempfile.gettempdir(), "resume_model_ls.pth")
+    if _try_download(LS_LATEST, tmp_model_path):
         model.load_state_dict(torch.load(tmp_model_path, map_location=device))
-        logger.info(f"Resumed model from MinIO: {minio_latest}")
-        resumed = True
-    except Exception as e:
-        logger.warning(f"Could not resume model from MinIO: {e}")
+        logger.info(f"Resumed model from MinIO: {LS_LATEST}")
+        resume_source = "ls_latest"
+    elif _try_download(CNN_LATEST, tmp_model_path):
+        model.load_state_dict(torch.load(tmp_model_path, map_location=device))
+        logger.info(f"Resumed model from MinIO: {CNN_LATEST}")
+        resume_source = "cnn_latest"
+    else:
+        logger.info("No LS/CNN checkpoint found; using ImageNet-initialized weights.")
 
     model.to(device)
 
+    # === Loss & Optimizer ===
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device)) if use_weighted_loss else nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
@@ -128,11 +148,15 @@ def train_on_ls_data(segments: list[tuple[str, str]]) -> str:
             "batch_size": 32,
             "learning_rate": 1e-4,
             "device": device.type,
-            "resumed": resumed,
+            "resume_source": resume_source,
+            "resumed": resume_source != "scratch",
             "num_segments": len(segments),
-            "weighted_loss": use_weighted_loss
+            "weighted_loss": use_weighted_loss,
+            "imbalance_ratio": round(float(imbalance_ratio), 3),
         })
+        mlflow.log_dict(label_counts, "label_distribution.json")
 
+        # === Train ===
         model.train()
         for epoch in range(num_epochs):
             running_loss = 0.0
@@ -143,28 +167,28 @@ def train_on_ls_data(segments: list[tuple[str, str]]) -> str:
                 loss = criterion(outputs, labels)
                 loss.backward()
                 optimizer.step()
+
                 running_loss += loss.item()
                 mlflow.log_metric("batch_loss", loss.item(), step=epoch * len(dataloader) + batch_idx)
-            avg_loss = running_loss / len(dataloader)
+
+            avg_loss = running_loss / max(1, len(dataloader))
             logger.info(f"Epoch {epoch + 1}/{num_epochs} Loss: {avg_loss:.4f}")
             mlflow.log_metric("epoch_loss", avg_loss, step=epoch)
 
-        # Save model locally
+        # === Save & upload ===
         torch.save(model.state_dict(), model_output_path)
         logger.info(f"Saved LS model to: {model_output_path}")
 
-        # Save metrics.json
         metrics = {
             "timestamp": now,
             "num_segments": len(segments),
-            "avg_loss": avg_loss,
-            "resumed": resumed,
+            "avg_loss": float(avg_loss),
+            "resume_source": resume_source,
             "weights": class_weights.tolist() if class_weights is not None else None
         }
         with open(metrics_output_path, "w") as f:
             json.dump(metrics, f, indent=2)
 
-        # Upload versioned model & metrics
         versioned_prefix = f"models/ls/versions/{now}/"
         try:
             upload_to_minio(model_output_path, minio_bucket, versioned_prefix + "ls_cnn_model.pth")
@@ -173,14 +197,13 @@ def train_on_ls_data(segments: list[tuple[str, str]]) -> str:
         except Exception as e:
             logger.warning(f"Failed to upload versioned LS model: {e}")
 
-        # Upload to latest/ only if this is the first or best so far
+        # (Optional) Let promotion logic decide latest; if not, update latest here:
         try:
             upload_to_minio(model_output_path, minio_bucket, "models/ls/latest/ls_cnn_model.pth")
             logger.info("Updated latest LS model in MinIO.")
         except Exception as e:
             logger.warning(f"Could not update latest LS model: {e}")
 
-        # MLflow artifact
         mlflow.pytorch.log_model(
             pytorch_model=model,
             artifact_path="model",

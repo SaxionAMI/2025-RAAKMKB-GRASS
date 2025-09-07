@@ -4,7 +4,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import gc
-from scipy.io import wavfile
+import torch
 import torchaudio
 from dagster import get_dagster_logger
 from botocore.exceptions import ClientError  # <- added
@@ -15,6 +15,9 @@ from cpp_processing.spectrogram import compute_spectrogram
 from cpp_processing import spectrogram as _spec
 
 from grass_pipeline_dagster.utils import load_settings, get_minio_client
+
+# === Audio constants ===
+TARGET_SR = 44100  # enforce a single sample rate for consistent spectrogram frequency axis
 
 
 def segment_audio_files(audio_files: list) -> int:
@@ -94,13 +97,17 @@ def segment_audio_files(audio_files: list) -> int:
         logger.info(f" Processing file {file_index + 1}/{len(audio_files)}: {audio_path}")
 
         try:
-            if audio_path.lower().endswith(".mp3"):
-                waveform, sample_rate = torchaudio.load(audio_path)
-                audio_np = waveform[0].numpy()
-            else:
-                sample_rate, audio_np = wavfile.read(audio_path)
-                if audio_np.ndim > 1:
-                    audio_np = audio_np[:, 0]
+            # Unified loader for WAV/MP3/etc. Requires ffmpeg for compressed formats.
+            waveform, sample_rate = torchaudio.load(audio_path)  # [C, T]
+            if waveform.shape[0] > 1:
+                waveform = waveform.mean(dim=0, keepdim=True)  # downmix to mono
+
+            # --- enforce a fixed sample rate for consistent spectrogram frequency axis ---
+            if sample_rate != TARGET_SR:
+                waveform = torchaudio.functional.resample(waveform, sample_rate, TARGET_SR)
+                sample_rate = TARGET_SR
+
+            audio_np = waveform.squeeze(0).to(torch.float32).numpy()
         except Exception as e:
             logger.warning(f"Failed to read {audio_path}: {e}")
             continue

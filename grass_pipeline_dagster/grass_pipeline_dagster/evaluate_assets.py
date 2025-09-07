@@ -78,7 +78,12 @@ def evaluate_model() -> dict:
             raise FileNotFoundError("test.csv not found in MinIO or locally")
 
     # === Prepare test dataset ===
-    transform = transforms.Compose([transforms.Resize((224, 224)), transforms.ToTensor()])
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225]),
+    ])
     test_loader = DataLoader(SpectrogramTestDataset(test_csv, transform), batch_size=32, shuffle=False)
 
     # === Load model ===
@@ -113,11 +118,13 @@ def evaluate_model() -> dict:
             y_pred.extend(preds.cpu().numpy())
 
     acc = accuracy_score(y_true, y_pred)
-    precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average="weighted")
+    precision_w, recall_w, f1_w, _ = precision_recall_fscore_support(y_true, y_pred, average="weighted")
+    _, _, f1_macro, _ = precision_recall_fscore_support(y_true, y_pred, average="macro")
     cm = confusion_matrix(y_true, y_pred)
 
     logger.info(f"Accuracy: {acc:.4f}")
-    logger.info(f"Precision: {precision:.4f} | Recall: {recall:.4f} | F1: {f1:.4f}")
+    logger.info(f"[Weighted] P: {precision_w:.4f} | R: {recall_w:.4f} | F1: {f1_w:.4f}")
+    logger.info(f"Macro-F1 (promotion metric): {f1_macro:.4f}")
     logger.info(f"Confusion Matrix:\n{cm}")
 
     # === Update metrics.json ===
@@ -129,29 +136,30 @@ def evaluate_model() -> dict:
     current_avg_loss = metrics_data.get("avg_loss", float("inf"))
     metrics_data.update({
         "accuracy": acc,
-        "precision": precision,
-        "recall": recall,
-        "f1": f1
+        "precision_weighted": precision_w,
+        "recall_weighted": recall_w,
+        "f1_weighted": f1_w,
+        "f1_macro": f1_macro
     })
     with open(local_metrics_path, "w") as f:
         json.dump(metrics_data, f, indent=4)
     client.upload_file(local_metrics_path, bucket, metrics_key)
 
-    # === Load latest F1 for promotion check ===
+    # === Load latest Macro-F1 for promotion check ===
     try:
         latest_metrics_temp = os.path.join(tempfile.gettempdir(), "latest_metrics.json")
         client.download_file(bucket, "models/cnn/latest/metrics.json", latest_metrics_temp)
         with open(latest_metrics_temp) as f:
-            latest_f1 = json.load(f).get("f1", -1)
-        logger.info(f"Latest promoted model F1: {latest_f1:.4f}")
+            latest_f1 = json.load(f).get("f1_macro", -1)
+        logger.info(f"Latest promoted model Macro-F1: {latest_f1:.4f}")
     except:
         latest_f1 = -1
         logger.info("No promoted model — assuming this is first run")
 
-    # === Promotion decision ===
-    promoted = f1 > latest_f1
+    # === Promotion decision (Macro-F1) ===
+    promoted = f1_macro > latest_f1
     if promoted:
-        logger.info("Promoting model to latest/")
+        logger.info("Promoting model to latest/ (based on Macro-F1)")
         client.upload_file(model_temp, bucket, "models/cnn/latest/cnn_model.pth")
         client.upload_file(local_metrics_path, bucket, "models/cnn/latest/metrics.json")
 
@@ -164,7 +172,7 @@ def evaluate_model() -> dict:
         except Exception as e:
             logger.warning(f"Failed to save latest model locally: {e}")
     else:
-        logger.info("Model not promoted (F1 not improved)")
+        logger.info("Model not promoted (Macro-F1 not improved)")
 
     # === Build evaluation manifest (dataset traceability) ===
     try:
@@ -202,9 +210,10 @@ def evaluate_model() -> dict:
         })
         mlflow.log_metrics({
             "accuracy": acc,
-            "precision": precision,
-            "recall": recall,
-            "f1_score": f1,
+            "precision_weighted": precision_w,
+            "recall_weighted": recall_w,
+            "f1_weighted": f1_w,
+            "f1_macro": f1_macro,
             "avg_loss": current_avg_loss
         })
         mlflow.log_param("num_classes", num_classes)
@@ -216,12 +225,11 @@ def evaluate_model() -> dict:
         pd.DataFrame(cm, index=class_labels, columns=class_labels).to_csv(cm_path)
         mlflow.log_artifact(cm_path, artifact_path="confusion_matrix")
 
-        # === NEW (MINIMAL): visual artifacts for confusion matrix & metrics with vibrant colors ===
+        # === NEW (visual artifacts) ===
         try:
-            # Confusion matrix heatmap with vibrant colors
             cm_fig_path = f"dagster_output/eval/confusion_matrix_{timestamp}.png"
             plt.figure(figsize=(6, 5))
-            plt.imshow(cm, interpolation="nearest", cmap="coolwarm")  # vibrant color map
+            plt.imshow(cm, interpolation="nearest", cmap="coolwarm")
             plt.title("Confusion Matrix")
             plt.xlabel("Predicted")
             plt.ylabel("True")
@@ -236,12 +244,11 @@ def evaluate_model() -> dict:
             plt.close()
             mlflow.log_artifact(cm_fig_path, artifact_path="confusion_matrix")
 
-            # Metrics bar chart with vibrant colors
             metrics_fig_path = f"dagster_output/eval/metrics_{timestamp}.png"
             plt.figure(figsize=(6, 4))
-            metric_names = ["accuracy", "precision", "recall", "f1_score"]
-            metric_values = [acc, precision, recall, f1]
-            colors = ["#2ca02c", "#1f77b4", "#ff7f0e", "#d62728"]  # vibrant palette
+            metric_names = ["accuracy", "precision_w", "recall_w", "f1_w", "f1_macro"]
+            metric_values = [acc, precision_w, recall_w, f1_w, f1_macro]
+            colors = ["#2ca02c", "#1f77b4", "#ff7f0e", "#9467bd", "#d62728"]
             plt.bar(metric_names, metric_values, color=colors)
             plt.ylim(0, 1)
             plt.title("Evaluation Metrics")
@@ -253,7 +260,6 @@ def evaluate_model() -> dict:
         except Exception as e:
             logger.warning(f"Failed to generate/log visual artifacts: {e}")
 
-        # === log dataset + evaluation manifest ===
         mlflow.log_artifact(test_csv, artifact_path="dataset")
         if eval_manifest_path and os.path.exists(eval_manifest_path):
             mlflow.log_artifact(eval_manifest_path, artifact_path="dataset")
@@ -265,9 +271,10 @@ def evaluate_model() -> dict:
         record=Point("evaluation_metrics")
             .tag("model", "ResNet18")
             .field("accuracy", acc)
-            .field("precision", precision)
-            .field("recall", recall)
-            .field("f1_score", f1)
+            .field("precision_weighted", precision_w)
+            .field("recall_weighted", recall_w)
+            .field("f1_weighted", f1_w)
+            .field("f1_macro", f1_macro)
             .field("avg_loss", current_avg_loss)
             .field("promoted", promoted)
             .field("samples", len(test_loader.dataset))
@@ -277,9 +284,10 @@ def evaluate_model() -> dict:
     logger.info("evaluate_model asset completed.")
     return {
         "accuracy": acc,
-        "precision": precision,
-        "recall": recall,
-        "f1_score": f1,
+        "precision_weighted": precision_w,
+        "recall_weighted": recall_w,
+        "f1_weighted": f1_w,
+        "f1_macro": f1_macro,
         "avg_loss": current_avg_loss,
         "promoted": promoted,
         "timestamp": timestamp,

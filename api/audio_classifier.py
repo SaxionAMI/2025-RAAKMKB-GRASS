@@ -7,11 +7,11 @@ import math
 import torch
 import torchvision.transforms as transforms
 from PIL import Image
+from torchvision import models
 import tempfile
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.io import wavfile
-import torchaudio
+import torchaudio  # <- use torchaudio for all formats
 
 # adding project root to sys.path ===
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "grass_pipeline_dagster"))
@@ -36,54 +36,58 @@ H_MIN = max(1, math.ceil(segment_duration / hop_sec))                 # min regi
 DWELL_HOPS = H_MIN                                                    # require this many consecutive hops to switch
 BRIDGE_K_HOPS = max(0, math.ceil(segment_overlap / hop_sec))          # bridge pinholes up to overlap width
 
+# --- Match train-time normalization (ImageNet) ---
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
-    transforms.ToTensor()
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                         std=[0.229, 0.224, 0.225]),
 ])
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=False)
+model = models.resnet18(pretrained=False)
 model.fc = torch.nn.Linear(model.fc.in_features, len(class_labels))
 
-def try_load_from_minio():
-    """
-    Try to download and load the latest model from MinIO.
-    Returns True if successful, False otherwise.
-    """
-    minio_bucket = "grass-pipeline"
-    minio_object = "models/ls/latest/ls_cnn_model.pth"
-    client = get_minio_client()
-    with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as tmp_file:
-        try:
-            client.download_file(minio_bucket, minio_object, tmp_file.name)
-            print(f"Downloaded model from MinIO: {minio_bucket}/{minio_object}")
-            state_dict = torch.load(tmp_file.name, map_location=device)
-            model.load_state_dict(state_dict)
-            model.to(device)
-            model.eval()
-            print("Loaded model from MinIO.")
-            return True
-        except Exception as e:
-            print(f"Could not load model from MinIO: {e}")
-            return False
-        finally:
-            tmp_file.close()
-            try:
-                os.remove(tmp_file.name)
-            except Exception:
-                pass
+# --- Model resolution: LS -> CNN -> local ---
+MINIO_BUCKET = "grass-pipeline"
+LS_KEY  = "models/ls/latest/ls_cnn_model.pth"
+CNN_KEY = "models/cnn/latest/cnn_model.pth"
 
-# --- Try MinIO first, fallback to local path ---
-if not try_load_from_minio():
+def _try_stat(key: str) -> bool:
     try:
-        print(f"Falling back to local model: {model_path}")
-        state_dict = torch.load(model_path, map_location=device)
-        model.load_state_dict(state_dict)
-        model.to(device)
-        model.eval()
-        print(f"Loaded model from: {model_path}")
-    except Exception as e:
-        raise RuntimeError(f"Failed to load model from MinIO and local: {e}")
+        get_minio_client().head_object(Bucket=MINIO_BUCKET, Key=key)
+        return True
+    except Exception:
+        return False
+
+def _download_minio(key: str) -> str:
+    tmp = os.path.join(tempfile.gettempdir(), os.path.basename(key))
+    get_minio_client().download_file(MINIO_BUCKET, key, tmp)
+    return tmp
+
+def resolve_checkpoint() -> tuple[str, str]:
+    """
+    Returns (source_label, local_path_to_checkpoint)
+    Priority: LS -> CNN -> local model_path
+    """
+    if _try_stat(LS_KEY):
+        return ("ls", _download_minio(LS_KEY))
+    if _try_stat(CNN_KEY):
+        return ("cnn", _download_minio(CNN_KEY))
+    if os.path.isfile(model_path):
+        return ("local", model_path)
+    raise RuntimeError(
+        "No suitable checkpoint found (LS, CNN, local). "
+        "Seed a baseline at models/cnn/latest/ or ensure settings['model_path'] exists."
+    )
+
+# --- Resolve checkpoint in priority: LS -> CNN -> local ---
+model_src, ckpt = resolve_checkpoint()
+state_dict = torch.load(ckpt, map_location=device)
+model.load_state_dict(state_dict)
+model.to(device)
+model.eval()
+print(f"[MODEL] Loaded source={model_src} path={ckpt}")
 
 def _capitalize_label(lbl: str) -> str:
     return lbl.capitalize()
@@ -199,19 +203,22 @@ def classify_audio(audio_path: str):
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
-    # --- Load audio ---
+    # --- Load audio (torchaudio for all formats) ---
     try:
-        if audio_path.lower().endswith(".mp3"):
-            waveform, sample_rate = torchaudio.load(audio_path)
-            audio_np = waveform[0].numpy()
-        else:
-            sample_rate, audio_np = wavfile.read(audio_path)
-            if audio_np.ndim > 1:
-                audio_np = audio_np[:, 0]
+        waveform, sample_rate = torchaudio.load(audio_path)  # [C, T]
+        if waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)  # mono
     except Exception as e:
         raise RuntimeError(f"Failed to read audio: {e}")
 
-    # --- Normalize ---
+    # --- Enforce target sample rate to match training/segmentation ---
+    TARGET_SR = 44100
+    if sample_rate != TARGET_SR:
+        waveform = torchaudio.functional.resample(waveform, sample_rate, TARGET_SR)
+        sample_rate = TARGET_SR
+
+    # --- To numpy + normalize (same recipe as segmentation/training) ---
+    audio_np = waveform.squeeze(0).to(torch.float32).numpy()
     audio_np = (audio_np - np.mean(audio_np)).astype(np.float32)
     audio_np /= (np.std(audio_np) + 1e-8)
 
