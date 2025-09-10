@@ -31,7 +31,7 @@ test:
       junit: test-reports/pytest.xml
 
 # 2) BUILD
-build:all:
+build:
   stage: build
   image: docker:26
   services:
