@@ -5,9 +5,13 @@ stages:
 
 variables:
   PYTHON_VERSION: "3.10"
-  DOCKER_REPO: "feyalt/grass-pipeline"
+  DOCKER_REPO_BASE: "feyalt/grass_final"     # single source of truth for your images
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+  # version tag: YYYYMMDDHHMM-<shortsha>
+  VER: "${CI_COMMIT_TIMESTAMP:0:12}-${CI_COMMIT_SHORT_SHA}"
 
-# 1) TEST - run unit tests (fast)
+# 1) TEST - run unit tests (fast)  (UNCHANGED)
 test:
   stage: test
   image: python:${PYTHON_VERSION}
@@ -26,41 +30,78 @@ test:
     reports:
       junit: test-reports/pytest.xml
 
-# 2) BUILD
-build:
+# 2) BUILD - API image (manual trigger on any branch)
+build:api:
   stage: build
-  image: alpine:3.18
+  image: docker:26
+  services:
+    - name: docker:26-dind
+      command: ["--insecure-registry=0.0.0.0/0", "--tls=false"]
+  variables:
+    DOCKER_BUILDKIT: "1"
+  needs: ["test"]
+  rules:
+    - when: manual
+      allow_failure: false
+  before_script:
+    - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
   script:
-    - echo "API_TAG=api" > deploy.env
-    - echo "DAGSTER_TAG=dagster" >> deploy.env
-    - cat deploy.env
-  artifacts:
-    paths:
-      - deploy.env
-    expire_in: 1 day
+    - echo "Building API image ${DOCKER_REPO_BASE}:api-${VER} and :api-latest"
+    - >
+      docker build
+      -f api/Dockerfile.api
+      -t ${DOCKER_REPO_BASE}:api-${VER}
+      -t ${DOCKER_REPO_BASE}:api-latest
+      .
+    - docker push ${DOCKER_REPO_BASE}:api-${VER}
+    - docker push ${DOCKER_REPO_BASE}:api-latest
 
-# 3) DEPLOY - NO DOCKER on runner (prints exact local commands)
-# This will NOT attempt docker pull/extract on the shared runner bcz we don't have enough space for it in our Gitlab atm:)
+# 3) BUILD - Dagster image (manual trigger on any branch)
+build:dagster:
+  stage: build
+  image: docker:26
+  services:
+    - name: docker:26-dind
+      command: ["--insecure-registry=0.0.0.0/0", "--tls=false"]
+  variables:
+    DOCKER_BUILDKIT: "1"
+  needs: ["test"]
+  rules:
+    - when: manual
+      allow_failure: false
+  before_script:
+    - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+  script:
+    - echo "Building Dagster image ${DOCKER_REPO_BASE}:dagster-${VER} and :dagster-latest"
+    - >
+      docker build
+      -f grass_pipeline_dagster/Dockerfile.dagster
+      -t ${DOCKER_REPO_BASE}:dagster-${VER}
+      -t ${DOCKER_REPO_BASE}:dagster-latest
+      .
+    - docker push ${DOCKER_REPO_BASE}:dagster-${VER}
+    - docker push ${DOCKER_REPO_BASE}:dagster-latest
+
+# 4) DEPLOY - manual pull & restart services (manual on any branch)
 deploy:
   stage: deploy
-  image: alpine:3.18
-  when: manual
-  dependencies:
-    - build
+  image: docker:26
+  services:
+    - name: docker:26-dind
+      command: ["--insecure-registry=0.0.0.0/0", "--tls=false"]
+  variables:
+    DEPLOY_COMPOSE_PATH: "docker-compose.yml"
+  needs:
+    - job: build:api
+      optional: true
+    - job: build:dagster
+      optional: true
+  rules:
+    - when: manual
+      allow_failure: false
   before_script:
-    - export $(cat deploy.env | xargs) || true
+    - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
   script:
-    - echo "Runner will NOT pull or extract images. Use these commands on a machine you control (your laptop / self-hosted runner)."
-    - echo ""
-    - echo "1) (optional) fetch images from Hub locally:"
-    - echo "   docker pull ${DOCKER_REPO}:api"
-    - echo "   docker pull ${DOCKER_REPO}:dagster"
-    - echo ""
-    - echo "2) Start the stack locally (uses the images above):"
-    - echo "   API_TAG=${API_TAG:-api} DAGSTER_TAG=${DAGSTER_TAG:-dagster} docker-compose -f docker-compose.yml pull"
-    - echo "   API_TAG=${API_TAG:-api} DAGSTER_TAG=${DAGSTER_TAG:-dagster} docker-compose -f docker-compose.yml up -d"
-    - echo ""
-    - echo "3) (optional) quick healthcheck:"
-    - echo "   sleep 6 && docker-compose -f docker-compose.yml exec -T api sh -c 'curl -fsS http://localhost:8000/health || (echo \"API health failed\" && exit 1)'"
-    - echo ""
-    - echo "If you need CI to do the pull/start, run CI on a self-hosted runner with plenty of disk (or preload images onto the runner using docker load)."
+    - echo "Pulling updated images and restarting stack…"
+    - docker compose -f ${DEPLOY_COMPOSE_PATH} pull
+    - docker compose -f ${DEPLOY_COMPOSE_PATH} up -d
