@@ -5,13 +5,13 @@ stages:
 
 variables:
   PYTHON_VERSION: "3.10"
-  DOCKER_REPO_BASE: "feyalt/grass_final"     # single source of truth for your images
+  DOCKER_REPO_BASE: "feyalt/grass_final"     
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: "/certs"
   # version tag: YYYYMMDDHHMM-<shortsha>
   VER: "${CI_COMMIT_TIMESTAMP:0:12}-${CI_COMMIT_SHORT_SHA}"
 
-# 1) TEST - run unit tests (fast)  (UNCHANGED)
+# 1) TEST - run unit tests
 test:
   stage: test
   image: python:${PYTHON_VERSION}
@@ -30,8 +30,8 @@ test:
     reports:
       junit: test-reports/pytest.xml
 
-# 2) BUILD - API image (manual trigger on any branch)
-build:api:
+# 2) BUILD
+build:all:
   stage: build
   image: docker:26
   services:
@@ -56,22 +56,6 @@ build:api:
     - docker push ${DOCKER_REPO_BASE}:api-${VER}
     - docker push ${DOCKER_REPO_BASE}:api-latest
 
-# 3) BUILD - Dagster image (manual trigger on any branch)
-build:dagster:
-  stage: build
-  image: docker:26
-  services:
-    - name: docker:26-dind
-      command: ["--insecure-registry=0.0.0.0/0", "--tls=false"]
-  variables:
-    DOCKER_BUILDKIT: "1"
-  needs: ["test"]
-  rules:
-    - when: manual
-      allow_failure: false
-  before_script:
-    - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-  script:
     - echo "Building Dagster image ${DOCKER_REPO_BASE}:dagster-${VER} and :dagster-latest"
     - >
       docker build
@@ -82,7 +66,7 @@ build:dagster:
     - docker push ${DOCKER_REPO_BASE}:dagster-${VER}
     - docker push ${DOCKER_REPO_BASE}:dagster-latest
 
-# 4) DEPLOY - manual pull & restart services (manual on any branch)
+# 3) DEPLOY 
 deploy:
   stage: deploy
   image: docker:26
@@ -92,9 +76,7 @@ deploy:
   variables:
     DEPLOY_COMPOSE_PATH: "docker-compose.yml"
   needs:
-    - job: build:api
-      optional: true
-    - job: build:dagster
+    - job: build:all
       optional: true
   rules:
     - when: manual
