@@ -60,16 +60,26 @@ def _make_balanced_dataset(base_img_dir: Path):
             _touch_png(base_img_dir / "neutral" / f"N{i}_segment_01.png")
 
 
-# ---------------------- TESTS (3 total) ----------------------
+# ---------------------- SPLIT TESTS (6 total) ----------------------
 
-def test_extract_clip_id():
+# (Split from original test_extract_clip_id)
+def test_extract_clip_id_basic():
     m = _load_prepare_assets_module()
     assert m.extract_clip_id("approval/cheer1_segment_03.png") == "cheer1"
+
+
+def test_extract_clip_id_underscored():
+    m = _load_prepare_assets_module()
     assert m.extract_clip_id("neutral/foo_bar_segment_12.png") == "foo_bar"
+
+
+def test_extract_clip_id_no_segment_suffix():
+    m = _load_prepare_assets_module()
     assert m.extract_clip_id("approval/clip.png") == "clip"
 
 
-def test_prepare_dataset_happy_path(monkeypatch, tmp_path):
+# (Split from original test_prepare_dataset_happy_path) — part 1: shape & schema
+def test_prepare_dataset_happy_path_schema_and_counts(monkeypatch, tmp_path):
     m = _load_prepare_assets_module()
     monkeypatch.chdir(tmp_path)
 
@@ -92,12 +102,29 @@ def test_prepare_dataset_happy_path(monkeypatch, tmp_path):
     for df in (train_df, test_df):
         assert set(df.columns) == {"path", "label"}
 
-    # total segments = 8 approval*(1~2) + 8 neutral*(1~2) -> deterministic from our pattern:
+    # total segments = deterministic from our pattern:
     # approval: 8 clips → 4 have 2 segs, 4 have 1 seg => 12
     # neutral:  same => 12 -> total 24
     assert result["train_size"] + result["test_size"] == 24
-    # with 16 clips and test_size=0.15 -> ceil(2.4)=3 clips in test (stratified across 2 classes)
+
+    # with 16 clips and test_size=0.15 -> test gets > 0 rows
     assert result["test_size"] > 0
+
+
+# (Split from original test_prepare_dataset_happy_path) — part 2: uploads
+def test_prepare_dataset_happy_path_minio_uploads(monkeypatch, tmp_path):
+    m = _load_prepare_assets_module()
+    monkeypatch.chdir(tmp_path)
+
+    base_img_dir = tmp_path / "dagster_output" / "spectrogram_images"
+    _make_balanced_dataset(base_img_dir)
+
+    monkeypatch.setattr(m, "load_settings", lambda: {"class_labels": ["approval", "neutral"]})
+    mock_client = MagicMock()
+    monkeypatch.setattr(m, "get_minio_client", lambda: mock_client)
+
+    result = m.prepare_dataset()
+    assert result  # not strictly needed; ensures call executed
 
     # two MinIO uploads to datasets/train.csv & datasets/test.csv
     calls = mock_client.upload_file.call_args_list
@@ -107,6 +134,7 @@ def test_prepare_dataset_happy_path(monkeypatch, tmp_path):
     assert calls[0].args[1] == calls[1].args[1] == "grass-pipeline"
 
 
+# (Original test_prepare_dataset_minio_upload_failure)
 def test_prepare_dataset_minio_upload_failure(monkeypatch, tmp_path):
     m = _load_prepare_assets_module()
     monkeypatch.chdir(tmp_path)

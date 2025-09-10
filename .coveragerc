@@ -1,0 +1,21 @@
+[run]
+branch = True
+source =
+    grass_pipeline_dagster/grass_pipeline_dagster
+omit =
+    */__init__.py
+    grass_pipeline_dagster/grass_pipeline_dagster/Label_Studio_Training/*
+    grass_pipeline_dagster/grass_pipeline_dagster/jobs.py
+    grass_pipeline_dagster/grass_pipeline_dagster/schedules.py
+    grass_pipeline_dagster/grass_pipeline_dagster/definitions.py
+    grass_pipeline_dagster/grass_pipeline_dagster/assets.py
+    grass_pipeline_dagster/grass_pipeline_dagster/utils.py
+    grass_pipeline_dagster/setup.py
+
+[report]
+show_missing = True
+skip_covered = True
+fail_under = 70
+
+[html]
+directory = coverage_html

@@ -38,6 +38,10 @@ vcpkg/
 
 # === IDE/editor config ===
 .vscode/
+.coverage
+htmlcov/
+coverage.xml
+.pytest_cache/
 
 # === System-specific ===
 .DS_Store
