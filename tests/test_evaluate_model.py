@@ -126,7 +126,7 @@ def base_eval_setup(monkeypatch, tmp_path):
         ]
     )
 
-    # Torch / torchvision: force CPU and swap resnet18 for a tiny linear net
+    # swap resnet18 for a tiny linear net
     import torch
     import torch.nn as nn
     import torchvision.models as tvm
@@ -161,7 +161,7 @@ def base_eval_setup(monkeypatch, tmp_path):
     write_api = MagicMock()
     influx.write_api.return_value = write_api
 
-    # MLflow stubs (no side effects)
+    # MLflow stubs
     import mlflow
     class DummyRun:
         class Info:
@@ -381,4 +381,4 @@ def test_versioned_metrics_always_uploaded(monkeypatch, base_eval_setup):
     out = m.evaluate_model()
     assert out["timestamp"] == version_ts
     remote_keys = {rk for _, rk in uploads}
-    assert metrics_key in remote_keys  # versioned metrics present
+    assert metrics_key in remote_keys  

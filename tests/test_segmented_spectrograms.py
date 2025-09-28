@@ -60,7 +60,7 @@ def _load_assets_module():
     return mod
 
 
-# ---- 6 fully mocked unit tests for segmented_spectrograms ----
+
 
 # 1) Happy path: mixed extensions -> forwards files and returns formatted count
 def test_segmented_spectrograms_happy_mixed(monkeypatch):
@@ -84,7 +84,7 @@ def test_segmented_spectrograms_happy_mixed(monkeypatch):
     assert calls["seen"] == fake_files
 
 
-# 2) Verifies settings are used to build the glob pattern; avoid raising by returning a dummy .wav
+# 2) Verifies settings are used to build the glob pattern;
 def test_segmented_spectrograms_uses_input_dir_in_glob(monkeypatch):
     _stub_utils_in_sysmodules({"input_dir": "custom_dir"})
     m = _load_assets_module()
@@ -93,7 +93,7 @@ def test_segmented_spectrograms_uses_input_dir_in_glob(monkeypatch):
 
     def fake_glob(pattern, recursive=False):
         captured["pattern"] = pattern
-        # return at least one wav so the asset doesn't raise
+        
         return ["custom_dir/dummy.wav"]
 
     monkeypatch.setattr(m.glob, "glob", fake_glob)
@@ -102,7 +102,7 @@ def test_segmented_spectrograms_uses_input_dir_in_glob(monkeypatch):
     _ = m.segmented_spectrograms()
 
     assert captured["pattern"] is not None
-    # The function makes an absolute path; just ensure "custom_dir" appears in the pattern
+    
     assert "custom_dir" in captured["pattern"].replace("\\", "/")
 
 

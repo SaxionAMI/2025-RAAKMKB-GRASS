@@ -14,10 +14,10 @@ from datetime import datetime, timezone
 import queue
 import sys
 
-# === Configuration ===
+# Configuration
 SAMPLE_RATE = 44100
 CHANNELS = 1
-BUFFER_SECONDS = 2 # holds the last 2 seconds of recorded mic input.
+BUFFER_SECONDS = 2 
 SEGMENT_SECONDS = 2.0
 OVERLAP_SECONDS = 0.25
 SEND_INTERVAL = 0.75
@@ -25,7 +25,7 @@ ENDPOINT = "http://localhost:8010/infer"
 SOURCE_NAME = "mic_stream"
 QUEUE_MAXSIZE = 10
 
-# === Session UUID and Shared Structures ===
+# Session ID a
 SESSION_ID = str(uuid.uuid4())
 audio_buffer = deque(maxlen=int(SAMPLE_RATE * BUFFER_SECONDS))
 segment_queue = queue.Queue(maxsize=QUEUE_MAXSIZE)
@@ -34,7 +34,7 @@ segment_queue = queue.Queue(maxsize=QUEUE_MAXSIZE)
 stop_event = Event()
 stream = None
 
-# === Redirect Print to GUI ===
+
 class TextRedirector:
     def __init__(self, widget):
         self.widget = widget

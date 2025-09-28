@@ -5,14 +5,14 @@ from pydantic import BaseModel
 import os, sys, tempfile, yaml, subprocess, json
 from typing import List, Dict, Any
 
-# Updated classifier (returns regions: [{"start":..,"end":..,"label":..}, ...])
+
 from api.audio_classifier import classify_audio
 
 app = FastAPI()
 
-# -----------------------------
+
 # Utilities
-# -----------------------------
+
 class ManualInput(BaseModel):
     audio_path: str
 
@@ -87,9 +87,9 @@ def _train_from_fallback_label(audio_path: str, label: str, background_tasks: Ba
         status_code=200
     )
 
-# -----------------------------
+
 # Endpoints
-# -----------------------------
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
@@ -164,9 +164,9 @@ async def predict(request: Request):
 
     return JSONResponse(content={"results": results})
 
-# -----------------------------
+
 # WEBHOOK (train on submit/update)
-# -----------------------------
+
 @app.post("/webhook")
 async def webhook(request: Request, background_tasks: BackgroundTasks):
     try:

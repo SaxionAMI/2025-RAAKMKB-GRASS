@@ -35,7 +35,7 @@ RUN rm -rf build CMakeCache.txt \
 # 5. Return to /app
 WORKDIR /app
 
-# 6. Ensure PYTHONPATH includes /app (so 'api' is importable)
+# 6. Ensure PYTHONPATH includes /app 
 ENV PYTHONPATH=/app:/app/grass_pipeline_dagster
 ENV MPLBACKEND=Agg
 

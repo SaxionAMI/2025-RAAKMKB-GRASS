@@ -130,6 +130,79 @@ docker-compose up
 | `ls_segment_audios.py` | Segments and maps audio via LS JSON |
 | `train_on_ls_data.py` | Trains model from LS-generated segments |
 
+
+# Label Studio Setup
+
+Label Studio is used in GRASS for annotation and human-in-the-loop retraining. It runs as a separate container in the Docker Compose stack.
+
+## 1. Accessing Label Studio
+
+Once services are up with `docker-compose up`, Label Studio is available at:
+
+- **Label Studio UI**: http://localhost:8080
+
+On first access, you will be asked to create an account (username/email + password). This account is used to log into the Label Studio dashboard.
+
+---
+
+## 2. Creating a Project
+
+1. After login, click **Create Project** and choose a name (e.g., *Crowd Sentiment Labeling*).
+2. Under **Labeling Interface**, configure audio classification e.g., (3 classes: Approval, Disapproval, Neutral).
+
+```bash
+<View>
+  <Audio name="audio" value="$audio"/>
+  <Labels name="region_labels" toName="audio">
+    <Label value="Approval" background="#22c55e"/>
+    <Label value="Disapproval" background="#ef4444"/>
+    <Label value="Neutral" background="#9ca3af"/>
+  </Labels>
+</View>
+```
+3. Upload your dataset (audio files or pre-segmented tasks).
+
+---
+
+## 3. Connecting the Model Backend
+
+The FastAPI service in GRASS exposes an API that Label Studio uses for pre-labeling and prediction retrieval.
+
+- **Model URL (inside Docker network)**: http://api:8000  
+- **Local access**: http://localhost:8000  
+
+In the project settings, go to **Settings → Model → Connected Model** and set:
+
+```
+http://api:8000
+```
+
+This allows Label Studio to send segments for inference and receive predicted labels.
+
+---
+
+## 4. Webhook Configuration
+
+To enable active learning retraining:
+
+1. Navigate to **Settings → Webhooks** in your project.
+2. Add a webhook with the following URL:
+
+```
+http://host.docker.internal:8000/webhook
+```
+
+This sends annotation events from Label Studio to the GRASS FastAPI service, which can trigger Dagster jobs for retraining.
+
+---
+
+## 5. Workflow Summary
+
+- Annotators upload or label audio segments in Label Studio.
+- Label Studio can pre-fill labels using the connected GRASS model (`/infer`).
+- On submission, a webhook notifies GRASS (`/webhook`).
+- Dagster `ls_training_job` can then retrain the model with updated data.
+
 ---
 
 ## System Components Overview

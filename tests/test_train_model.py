@@ -36,7 +36,7 @@ def _load_train_module():
     assert mod_path.exists(), f"train_model.py not found at {mod_path}"
     spec = importlib.util.spec_from_file_location("train_model_mod", mod_path)
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore[attr-defined]
+    spec.loader.exec_module(mod)  
     return mod
 
 
@@ -170,7 +170,7 @@ def setup_happy(monkeypatch, tmp_path):
     return m, client
 
 
-# ---------- 6 focused tests ----------
+
 
 # 1) Skip path: status + reason
 def test_train_model_skips_status_reason(setup_skip_no_new):
@@ -211,7 +211,7 @@ def test_train_model_happy_minio_uploads(setup_happy):
     assert client.upload_file.call_count >= 2
 
 
-# 6) Happy path: metrics.json uploaded to the expected remote key (no local file checks)
+# 6) Happy path: metrics.json uploaded to the expected remote key 
 def test_train_model_happy_metrics_uploaded_remote_key(setup_happy):
     m, client = setup_happy
     out = m.train_model()

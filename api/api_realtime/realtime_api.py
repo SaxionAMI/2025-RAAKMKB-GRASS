@@ -19,7 +19,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from collections import deque, Counter
-import torchaudio  # <-- use same audio path as training
+import torchaudio  
 
 app = FastAPI()
 
@@ -31,9 +31,9 @@ label_map = None
 inverse_label_map = None
 influx = None
 write_api = None
-TARGET_SR = 44100  # must match training
+TARGET_SR = 44100  
 
-# Sliding window buffers (for smoothing on server-side if needed)
+# Sliding window buffers (for smoothing on server-side)
 label_buffer = deque(maxlen=5)
 confidence_buffer = deque(maxlen=5)
 
@@ -47,14 +47,14 @@ def load_model():
     TARGET_SR = int(settings.get("target_sr", TARGET_SR))
 
     num_classes = len(settings["class_labels"])
-    # Use same API family as training; checkpoint will set final weights
+    # Load model architecture and weights
     model = resnet18(weights=None)
     model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
     state = torch.load(model_path, map_location="cpu")
     model.load_state_dict(state)
     model.eval()
 
-    # Match training transforms (ImageNet normalization)
+    # ImageNet normalization
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
@@ -75,7 +75,7 @@ def load_model():
         print("Loaded Grafana label mapping.")
         print("Grafana label map (for verification):", app.state.grafana_label_map)
     except Exception as e:
-        print("⚠️ Failed to load grafana_label_order.json:", e)
+        print("Failed to load grafana_label_order.json:", e)
         app.state.grafana_label_map = {}
 
     print("Real-time model and InfluxDB logger ready")
@@ -93,26 +93,26 @@ async def infer(
             tmp.write(await file.read())
             tmp_path = tmp.name
 
-        # ---- Audio load & resample (match training path via torchaudio) ----
-        waveform, sample_rate = torchaudio.load(tmp_path)  # [C, T], float32 in [-1, 1]
+        # Audio load & resample 
+        waveform, sample_rate = torchaudio.load(tmp_path)  
         if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)  # mono
+            waveform = waveform.mean(dim=0, keepdim=True)  
         if sample_rate != TARGET_SR:
             waveform = torchaudio.functional.resample(waveform, sample_rate, TARGET_SR)
             sample_rate = TARGET_SR
 
         audio_np = waveform.squeeze(0).to(torch.float32).numpy()
-        # Normalize like training (zero mean / unit variance)
+        # Normalize 
         audio_np = (audio_np - np.mean(audio_np)) / (np.std(audio_np) + 1e-8)
 
-        # --- segmentation params (interpret overlap as seconds) ---
-        segment_duration = float(settings["segment_duration"])     # window (s), e.g., 1.0
-        segment_overlap = float(settings["segment_overlap"])       # desired overlap (s), e.g., 0.25
-        hop_sec = max(1e-6, segment_duration - segment_overlap)    # step = window - overlap
+        # segmentation params 
+        segment_duration = float(settings["segment_duration"])     
+        segment_overlap = float(settings["segment_overlap"])       
+        hop_sec = max(1e-6, segment_duration - segment_overlap)    
 
-        # Call segmenter with hop (step) seconds
+        
         segments = segment_audio(audio_np, sample_rate, segment_duration, hop_sec)
-        # normalize to list to avoid NumPy truth-value ambiguity
+        
         if isinstance(segments, np.ndarray):
             segments = list(segments)
         if segments is None or len(segments) == 0:
@@ -128,17 +128,17 @@ async def infer(
             try:
                 start = perf_counter()
 
-                # Per-segment normalization safety (as in training code)
+                # Per-segment normalization 
                 segment = (segment - np.mean(segment)).astype(np.float32)
                 segment /= (np.std(segment) + 1e-8)
 
-                # Compute spectrogram and render exactly like training (Matplotlib + 'jet')
+                # Compute spectrogram 
                 spec = compute_spectrogram(segment, sample_rate)
                 log_spec = 10 * np.log10(spec + 1e-10)
                 log_spec -= np.max(log_spec)
                 log_spec = np.clip(log_spec, -80, 0)
 
-                # Use matplotlib route to preserve exact training parity
+                
                 with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_img:
                     image_path = tmp_img.name
                     plt.figure(figsize=(4, 4))

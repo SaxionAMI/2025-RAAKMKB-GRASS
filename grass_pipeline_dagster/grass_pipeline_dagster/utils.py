@@ -40,6 +40,6 @@ def get_influx_client():
     """
     return InfluxDBClient(
         url="http://influxdb:8086",
-        token="mytoken",              # Use the same token as in docker-compose.yml
+        token="mytoken",              
         org="grass"
     )

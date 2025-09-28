@@ -11,9 +11,9 @@ from torchvision import models
 import tempfile
 import numpy as np
 import matplotlib.pyplot as plt
-import torchaudio  # <- use torchaudio for all formats
+import torchaudio  
 
-# adding project root to sys.path ===
+
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "grass_pipeline_dagster"))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
@@ -32,11 +32,11 @@ segment_overlap  = float(settings["segment_overlap"])
 
 # --- Derive hop-aware dynamics ---
 hop_sec = max(1e-6, segment_duration - segment_overlap)
-H_MIN = max(1, math.ceil(segment_duration / hop_sec))                 # min region length in hops
-DWELL_HOPS = H_MIN                                                    # require this many consecutive hops to switch
-BRIDGE_K_HOPS = max(0, math.ceil(segment_overlap / hop_sec))          # bridge pinholes up to overlap width
+H_MIN = max(1, math.ceil(segment_duration / hop_sec))               
+DWELL_HOPS = H_MIN                                                    
+BRIDGE_K_HOPS = max(0, math.ceil(segment_overlap / hop_sec))          
 
-# --- Match train-time normalization (ImageNet) ---
+
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
@@ -48,7 +48,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = models.resnet18(pretrained=False)
 model.fc = torch.nn.Linear(model.fc.in_features, len(class_labels))
 
-# --- Model resolution: LS -> CNN -> local ---
+# Model resolution: LS -> CNN -> local
 MINIO_BUCKET = "grass-pipeline"
 LS_KEY  = "models/ls/latest/ls_cnn_model.pth"
 CNN_KEY = "models/cnn/latest/cnn_model.pth"
@@ -81,7 +81,7 @@ def resolve_checkpoint() -> tuple[str, str]:
         "Seed a baseline at models/cnn/latest/ or ensure settings['model_path'] exists."
     )
 
-# --- Resolve checkpoint in priority: LS -> CNN -> local ---
+
 model_src, ckpt = resolve_checkpoint()
 state_dict = torch.load(ckpt, map_location=device)
 model.load_state_dict(state_dict)
@@ -92,7 +92,7 @@ print(f"[MODEL] Loaded source={model_src} path={ckpt}")
 def _capitalize_label(lbl: str) -> str:
     return lbl.capitalize()
 
-# ====== Hop-grid, labels-only smoothing helpers ======
+
 
 def _stable_labels_with_dwell(hop_labels, dwell_hops: int):
     """
@@ -191,7 +191,7 @@ def _enforce_min_region_hops(regions, hop_sec: float, segment_duration: float):
             i += 1
     return regions
 
-# ====== Main classification ======
+# Main classification
 
 def classify_audio(audio_path: str):
     """
@@ -203,32 +203,32 @@ def classify_audio(audio_path: str):
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
-    # --- Load audio (torchaudio for all formats) ---
+    # --- Load audio 
     try:
-        waveform, sample_rate = torchaudio.load(audio_path)  # [C, T]
+        waveform, sample_rate = torchaudio.load(audio_path) 
         if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)  # mono
+            waveform = waveform.mean(dim=0, keepdim=True)  
     except Exception as e:
         raise RuntimeError(f"Failed to read audio: {e}")
 
-    # --- Enforce target sample rate to match training/segmentation ---
+    
     TARGET_SR = 44100
     if sample_rate != TARGET_SR:
         waveform = torchaudio.functional.resample(waveform, sample_rate, TARGET_SR)
         sample_rate = TARGET_SR
 
-    # --- To numpy + normalize (same recipe as segmentation/training) ---
+    
     audio_np = waveform.squeeze(0).to(torch.float32).numpy()
     audio_np = (audio_np - np.mean(audio_np)).astype(np.float32)
     audio_np /= (np.std(audio_np) + 1e-8)
 
-    # --- Segment ---
+    
     segments = segment_audio(audio_np, sample_rate, segment_duration, hop_sec)
     print(f"{0 if segments is None else len(segments)} segments created")
     if len(segments) == 0:
         raise RuntimeError("No segments available after segmentation")
 
-    # --- Per-segment inference (labels only; confidence ignored) ---
+    
     hop_labels = []
     for i, segment in enumerate(segments):
         image_path = None
@@ -279,7 +279,7 @@ def classify_audio(audio_path: str):
     # --- Labels smoothing ---
     stable_labels = _stable_labels_with_dwell(hop_labels, dwell_hops=DWELL_HOPS)
 
-    # --- Convert to LS regions, then fix tiny artifacts ---
+    # --- Convert to LS regions
     regions = _hops_to_regions(stable_labels, hop_sec, segment_duration)
     regions = _bridge_pinhole(regions, hop_sec, BRIDGE_K_HOPS)
     regions = _enforce_min_region_hops(regions, hop_sec, segment_duration)

@@ -13,7 +13,7 @@ from sklearn.metrics import accuracy_score, precision_recall_fscore_support, con
 from dagster import asset, get_dagster_logger
 from influxdb_client import Point
 from influxdb_client.client.write_api import SYNCHRONOUS
-import matplotlib.pyplot as plt  # [MINIMAL ADD] for visual artifacts
+import matplotlib.pyplot as plt
 
 from grass_pipeline_dagster.utils import load_settings, get_minio_client, get_influx_client
 

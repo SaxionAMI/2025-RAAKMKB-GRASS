@@ -1,9 +1,7 @@
+version: "3.8"
+
 services:
   dagster:
-    gpus: all
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     deploy:
       resources:
         reservations:

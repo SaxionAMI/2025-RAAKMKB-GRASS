@@ -39,7 +39,7 @@ class SegmentPredictionDataset(Dataset):
         image = Image.open(img_path).convert("RGB")
         if self.transform:
             image = self.transform(image)
-        return image, label, img_path  # Return path for logging
+        return image, label, img_path  
 
 
 @asset

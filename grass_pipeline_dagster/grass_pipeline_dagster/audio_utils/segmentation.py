@@ -7,7 +7,7 @@ import gc
 import torch
 import torchaudio
 from dagster import get_dagster_logger
-from botocore.exceptions import ClientError  # <- added
+from botocore.exceptions import ClientError  
 
 from cpp_processing.segmenter import segment_audio
 from cpp_processing.spectrogram import compute_spectrogram
@@ -17,7 +17,7 @@ from cpp_processing import spectrogram as _spec
 from grass_pipeline_dagster.utils import load_settings, get_minio_client
 
 # === Audio constants ===
-TARGET_SR = 44100  # enforce a single sample rate for consistent spectrogram frequency axis
+TARGET_SR = 44100  
 
 
 def segment_audio_files(audio_files: list) -> int:
