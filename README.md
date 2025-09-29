@@ -46,7 +46,7 @@ Ensure the model exists at this path before launching the GUI. You can generate 
 After everything is set up:
 
 ```bash
-python stream_gui.py
+python stream_listener.py
 ```
 
 This launches a desktop interface to:
@@ -191,6 +191,11 @@ To enable active learning retraining:
 ```
 http://host.docker.internal:8000/webhook
 ```
+Make sure to tick 3 options when adding the webhook link
+
+1.Send payload,
+2.Annotation created,
+3.Annotation updated,
 
 This sends annotation events from Label Studio to the GRASS FastAPI service, which can trigger Dagster jobs for retraining.
 
