@@ -1,6 +1,7 @@
 # predict_api.py
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os, sys, tempfile, yaml, subprocess, json
 from typing import List, Dict, Any
@@ -10,7 +11,13 @@ from api.audio_classifier import classify_audio
 
 app = FastAPI()
 
-
+# Allow all origins for simplicity
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # or ["http://localhost:33000"] if Grafana is on 33000
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # Utilities
 
 class ManualInput(BaseModel):
@@ -101,16 +108,21 @@ def setup():
 @app.post("/predict_manual")
 def predict_manual(input: ManualInput):
     path = input.audio_path
-    print("[PREDICT_MANUAL] path:", path); sys.stdout.flush()
     if not os.path.exists(path):
         return JSONResponse(content={"error": f"Manual path not found: {path}"}, status_code=404)
 
     try:
-        regions = classify_audio(path)
-        print("[PREDICT_MANUAL] regions:", regions)
-        return JSONResponse(content={"result": _regions_to_ls_results(regions), "model_version": "v1.0-regions"})
+        result = classify_audio(path)
+        return JSONResponse(content={
+            "regions": result["regions"],          # for streaming / Influx
+            "scores": result["scores"],            # per-segment probabilities
+            "final_label": result["final_label"],  # last segment label
+            "labelstudio": _regions_to_ls_results(result["regions"]),
+            "model_version": "v1.0-regions"
+        })
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
+
 
 @app.post("/predict")
 async def predict(request: Request):
@@ -163,6 +175,30 @@ async def predict(request: Request):
         results.append(result)
 
     return JSONResponse(content={"results": results})
+
+ffmpeg_proc = None
+
+class DemoToggle(BaseModel):
+    demo: bool
+
+@app.post("/toggle_demo")
+def toggle_demo(toggle: DemoToggle):
+    global ffmpeg_proc
+    if toggle.demo:
+        if ffmpeg_proc is None:
+            ffmpeg_proc = subprocess.Popen([
+                "ffmpeg", "-re", "-stream_loop", "-1",
+                "-i", "/app/demo_audio/demo_football_sound.wav",
+                "-map", "0:a:0",
+                "-c:a", "libopus", "-b:a", "64k", "-ar", "48000", "-ac", "1",
+                "-f", "rtsp", "-rtsp_transport", "tcp",
+                "rtsp://mediamtx:8554/stream"
+            ])
+    else:
+        if ffmpeg_proc is not None:
+            ffmpeg_proc.terminate()
+            ffmpeg_proc = None
+    return {"demo_active": toggle.demo}
 
 
 # WEBHOOK (train on submit/update)

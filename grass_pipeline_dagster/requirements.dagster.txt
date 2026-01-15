@@ -19,3 +19,5 @@ fastapi
 uvicorn
 requests
 scipy
+aiohttp
+ffmpeg-python

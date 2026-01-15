@@ -31,7 +31,10 @@ RUN rm -rf build CMakeCache.txt \
 WORKDIR /app
 RUN python3 -m pip install --upgrade pip \
  && python3 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 \
+ && python3 -m pip install --no-cache-dir torchcodec \
  && python3 -m pip install -r grass_pipeline_dagster/requirements.dagster.txt
+
+
 
 # 6) Start Dagster
 CMD ["dagster", "dev", "-h", "0.0.0.0", "-p", "3000", "-f", "grass_pipeline_dagster/grass_pipeline_dagster/definitions.py"]

@@ -10,3 +10,4 @@ scipy
 soundfile
 requests
 torchaudio
+ffmpeg-python

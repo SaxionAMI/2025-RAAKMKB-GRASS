@@ -192,11 +192,14 @@ def _enforce_min_region_hops(regions, hop_sec: float, segment_duration: float):
     return regions
 
 # Main classification
-
 def classify_audio(audio_path: str):
     """
     Classify an audio file into consecutive sentiment regions.
-    Returns: list of {"start": float, "end": float, "label": str}
+
+    Returns:
+        dict with:
+            - "regions": list of {"start", "end", "label"} for LS
+            - "scores": list of per-segment probabilities with labels
     """
     print("classify_audio called with:", audio_path)
 
@@ -205,31 +208,29 @@ def classify_audio(audio_path: str):
 
     # --- Load audio 
     try:
-        waveform, sample_rate = torchaudio.load(audio_path) 
+        waveform, sample_rate = torchaudio.load(audio_path)
         if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)  
+            waveform = waveform.mean(dim=0, keepdim=True)
     except Exception as e:
         raise RuntimeError(f"Failed to read audio: {e}")
 
-    
     TARGET_SR = 44100
     if sample_rate != TARGET_SR:
         waveform = torchaudio.functional.resample(waveform, sample_rate, TARGET_SR)
         sample_rate = TARGET_SR
 
-    
     audio_np = waveform.squeeze(0).to(torch.float32).numpy()
     audio_np = (audio_np - np.mean(audio_np)).astype(np.float32)
     audio_np /= (np.std(audio_np) + 1e-8)
 
-    
     segments = segment_audio(audio_np, sample_rate, segment_duration, hop_sec)
     print(f"{0 if segments is None else len(segments)} segments created")
     if len(segments) == 0:
         raise RuntimeError("No segments available after segmentation")
 
-    
     hop_labels = []
+    hop_scores = []  # store full probs per segment
+
     for i, segment in enumerate(segments):
         image_path = None
         try:
@@ -264,6 +265,7 @@ def classify_audio(audio_path: str):
             pred_idx = int(np.argmax(probs))
             pred_label = class_labels[pred_idx]
             hop_labels.append(pred_label)
+            hop_scores.append({lbl: float(probs[j]) for j, lbl in enumerate(class_labels)})
 
             print("Seg {}: ".format(i) + ", ".join(
                 f"{lbl}={probs[j]:.2f}" for j, lbl in enumerate(class_labels)
@@ -271,7 +273,9 @@ def classify_audio(audio_path: str):
 
         except Exception as e:
             print(f"⚠️ Segment {i} failed:", e)
-            hop_labels.append(hop_labels[-1] if hop_labels else class_labels[0])
+            fallback_label = hop_labels[-1] if hop_labels else class_labels[0]
+            hop_labels.append(fallback_label)
+            hop_scores.append({lbl: 0.0 for lbl in class_labels})
         finally:
             if image_path and os.path.exists(image_path):
                 os.remove(image_path)
@@ -286,5 +290,9 @@ def classify_audio(audio_path: str):
 
     print(f"Generated {len(regions)} regions: {regions}")
 
-    # LS start/end/label
-    return [{"start": r["start"], "end": r["end"], "label": r["label"]} for r in regions]
+    return {
+        "regions": [{"start": r["start"], "end": r["end"], "label": r["label"]} for r in regions],
+        "scores": hop_scores,  # list of dicts per segment with class probabilities
+        "final_label": stable_labels[-1] if stable_labels else None
+    }
+

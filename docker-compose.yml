@@ -1,8 +1,12 @@
-version: "3.8"
+
 
 services:
   dagster:
-    image: feyalt/grass_final:dagster-latest
+    build:
+      context: .
+      dockerfile: ./grass_pipeline_dagster/Dockerfile.dagster
+    extra_hosts:
+      - "minio:172.19.0.2"
     ports:
       - "3000:3000"
     environment:
@@ -13,9 +17,10 @@ services:
       - ./dagster_home:/app/dagster_home
       - ./mlflow:/mlflow
       - ./mlflow/artifacts:/app/mlartifacts
-      - ./label_studio_data:/data
+      - ./label_studio_data:/label-studio/data
       - ./dagster_output:/app/dagster_output
       - cpp_ext:/app/cpp_processing
+      - stream_data:/data/stream_segments
     command: ["dagster", "dev", "-h", "0.0.0.0", "-p", "3000", "-f", "grass_pipeline_dagster/grass_pipeline_dagster/definitions.py"]
 
   mlflow:
@@ -35,9 +40,10 @@ services:
         --default-artifact-root /mlflow/artifacts
         --host 0.0.0.0
 
-  minio:
+  minio_grass:
     image: minio/minio:latest
-    container_name: minio
+    container_name: minio_grass
+    hostname: minio
     ports:
       - "9000:9000"   # S3 API
       - "9001:9001"   # MinIO UI
@@ -64,7 +70,9 @@ services:
       - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=mytoken
 
   api:
-    image: feyalt/grass_final:api-latest
+    build:
+      context: .
+      dockerfile: ./api/Dockerfile.api
     ports:
       - "8000:8000"
     volumes:
@@ -73,7 +81,9 @@ services:
       - ./config:/app/config
       - ./grass_pipeline_dagster:/app/grass_pipeline_dagster
       - ./api:/app/api
-      - ./label_studio_data:/data
+      - ./label_studio_data:/label-studio/data
+      - stream_data:/data/stream_segments
+      - ./demo_audio:/app/demo_audio
     environment:
       - PYTHONPATH=/app:/app/grass_pipeline_dagster
       - DAGSTER_HOME=/app/dagster_home
@@ -83,10 +93,10 @@ services:
   labelstudio:
     image: heartexlabs/label-studio:latest
     container_name: labelstudio
+    user: "0:0"
     ports:
       - "8080:8080"
     volumes:
-      - ./label_studio_data:/data
       - ./label_studio_data:/label-studio/data
     environment:
       - ML_TIMEOUT_PREDICT=3600
@@ -94,32 +104,36 @@ services:
       - ML_TIMEOUT_TRAIN=7200
       - GUNICORN_CMD_ARGS=--timeout 36000 --graceful-timeout 36000 --workers 2
     restart: unless-stopped
+
   grafana: 
     image: grafana/grafana:10.3.3
+    user: "0"
     container_name: grafana
     ports:
       - "33000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_PANELS_DISABLE_SANITIZE_HTML=true
     volumes:
       - ./grafana_data:/var/lib/grafana
     depends_on:
       - influxdb
-  grass_pipeline-realtime:
-    image: feyalt/grass_final:api-latest
-    command: ["uvicorn","api.api_realtime.realtime_api:app","--host","0.0.0.0","--port","8000"]
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest
     ports:
-      - "8010:8000"
-    environment:
-      - PYTHONPATH=/app:/app/grass_pipeline_dagster
+      - "8554:8554"     # RTSP
+      - "8888:8888"     # HTTP API / WebRTC signaling
     volumes:
-      - ./api:/app/api
-      - ./grass_pipeline_dagster:/app/grass_pipeline_dagster
-      - ./config:/app/config
-      - ./dagster_output:/app/dagster_output
-    working_dir: /app
-    depends_on:
-      - influxdb
-    restart: always
+      - ./config/mediamtx.yml:/mediamtx.yml
+    restart: unless-stopped
+
 volumes:
   cpp_ext: {}
+  stream_data:
+
+
+
+
+

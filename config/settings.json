@@ -7,5 +7,8 @@
   "class_labels": ["approval", "disapproval", "neutral"],
   "force_retrain": true,
   "resume_from_ls_model": false,
-  "ls_training_epochs": 5
+  "ls_training_epochs": 5,
+  "rtsp_stream_url": "rtsp://host.docker.internal:8554/stream",
+  "predict_api_url": "http://api:8000/predict_manual",
+  "shared_audio_data_dir": "/data/stream_segments"
 }
