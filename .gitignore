@@ -1,49 +1,13 @@
-# === Python bytecode ===
-__pycache__/
-*.py[cod]
-
-# === Virtual Environments ===
 .env
-venv/
-
-# === Logs, outputs, and generated data ===
-*.log
-*.csv
-*.joblib
-*.pth
-*.pt
-
-# === Output directories ===
-benchmark_out/
 dagster_home/
-dagster_output/
-mlflow/
-mlartifacts/
+storage/
 mlruns/
-label_studio_data/
-audio_input/
-output_logs/
-minio_storage/
-influxdb_data/
-grafana_data/
-vcpkg/
-/benchmark_stft_comparison.py
-/live_audio_dashboard.py
-/count.py
-
-
-# === Project-specific nested output ===
-/grass_pipeline_dagster/mlruns/
-/grass_pipeline_dagster/dagster_output/
-
-# === IDE/editor config ===
-.vscode/
-.coverage
-htmlcov/
-coverage.xml
+models/
+# audio data — keep the folder structure (.gitkeep) but not the wav files
+audio_input/**/*.wav
+audio_input/**/*.mp3
+audio_input/**/*.flac
+__pycache__/
+*.pyc
 .pytest_cache/
-
-# === System-specific ===
-.DS_Store
-Thumbs.db
-/audio_input
+.venv/

@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "football-stadium-sentiment"
+version = "0.1.0"
+description = "Football stadium crowd-sentiment project, built on the Audio Ops Framework."
+authors = ["Saxion AMI"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.15"
+
+# The framework, pulled straight from GitHub. Pin to a tag for reproducibility.
+audio-ops-framework = { git = "git@github.com:SaxionAMI/2026-AMI-AudioOpsFramework.git", tag = "v0.1.0" }
+
+# --- Alternatives ---------------------------------------------------------
+# Co-developing the framework locally (edits picked up live, no re-install):
+# audio-ops-framework = { path = "../2026-AMI-AudioOpsFramework", develop = true }
+# Track a branch instead of a tag:
+# audio-ops-framework = { git = "git@github.com:SaxionAMI/2026-AMI-AudioOpsFramework.git", branch = "main" }
+# HTTPS instead of SSH (needs a token for a private repo):
+# audio-ops-framework = { git = "https://github.com/SaxionAMI/2026-AMI-AudioOpsFramework.git", tag = "v0.1.0" }
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

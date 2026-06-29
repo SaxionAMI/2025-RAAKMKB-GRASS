@@ -1,3 +1,0 @@
-/app/cpp_processing/build_linux/CMakeFiles/audio_cpp.dir
-/app/cpp_processing/build_linux/CMakeFiles/edit_cache.dir
-/app/cpp_processing/build_linux/CMakeFiles/rebuild_cache.dir
