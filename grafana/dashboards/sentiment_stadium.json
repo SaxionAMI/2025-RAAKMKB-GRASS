@@ -1,0 +1,208 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "liveNow": true,
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["grass", "sentiment"],
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Football Stadium — Live Crowd Sentiment",
+  "uid": "grass-sentiment",
+  "version": 1,
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Stadium",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 1,
+      "type": "canvas",
+      "title": "Stadium — sentiment per stream (replace background with stadium image)",
+      "description": "Starter canvas. Add a stadium image as the background, then bind each zone element to a stream's latest sentiment. Drives off the same query as the table below.",
+      "datasource": { "type": "influxdb", "uid": "influxdb_sentiment" },
+      "gridPos": { "h": 11, "w": 16, "x": 0, "y": 1 },
+      "options": {
+        "inlineEditing": true,
+        "showAdvancedTypes": true,
+        "panZoom": true,
+        "root": {
+          "type": "frame",
+          "elements": [
+            {
+              "type": "metric-value",
+              "name": "stream1",
+              "config": { "text": { "field": "confidence", "mode": "field" }, "color": { "fixed": "#73BF69" } },
+              "placement": { "top": 20, "left": 20, "width": 160, "height": 60 },
+              "background": { "color": { "fixed": "#1f3d1f" } }
+            },
+            {
+              "type": "metric-value",
+              "name": "stream2",
+              "config": { "text": { "field": "confidence", "mode": "field" }, "color": { "fixed": "#73BF69" } },
+              "placement": { "top": 20, "right": 20, "width": 160, "height": 60 },
+              "background": { "color": { "fixed": "#1f3d1f" } }
+            },
+            {
+              "type": "metric-value",
+              "name": "stream3",
+              "config": { "text": { "field": "confidence", "mode": "field" }, "color": { "fixed": "#73BF69" } },
+              "placement": { "bottom": 20, "left": 20, "width": 160, "height": 60 },
+              "background": { "color": { "fixed": "#1f3d1f" } }
+            },
+            {
+              "type": "metric-value",
+              "name": "stream4",
+              "config": { "text": { "field": "confidence", "mode": "field" }, "color": { "fixed": "#73BF69" } },
+              "placement": { "bottom": 20, "right": 20, "width": 160, "height": 60 },
+              "background": { "color": { "fixed": "#1f3d1f" } }
+            }
+          ],
+          "background": { "color": { "fixed": "#0b1f12" } },
+          "border": { "color": { "fixed": "dark-green" } }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "influxdb", "uid": "influxdb_sentiment" },
+          "query": "from(bucket: \"audio_metrics\")\n  |> range(start: -2m)\n  |> filter(fn: (r) => r._measurement == \"inference_sentiment\" and (r._field == \"label\" or r._field == \"confidence\"))\n  |> group(columns: [\"stream_id\", \"_field\"])\n  |> last()\n  |> pivot(rowKey: [\"stream_id\"], columnKey: [\"_field\"], valueColumn: \"_value\")"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Latest sentiment per stream",
+      "datasource": { "type": "influxdb", "uid": "influxdb_sentiment" },
+      "gridPos": { "h": 11, "w": 8, "x": 16, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" } },
+          "mappings": [
+            { "type": "value", "options": { "approval": { "color": "green", "index": 0 }, "disapproval": { "color": "red", "index": 1 }, "neutral": { "color": "text", "index": 2 } } }
+          ]
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "label" }, "properties": [ { "id": "custom.cellOptions", "value": { "type": "color-background" } } ] },
+          { "matcher": { "id": "byName", "options": "confidence" }, "properties": [ { "id": "unit", "value": "percentunit" } ] }
+        ]
+      },
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "influxdb", "uid": "influxdb_sentiment" },
+          "query": "from(bucket: \"audio_metrics\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"inference_sentiment\" and (r._field == \"label\" or r._field == \"confidence\"))\n  |> group(columns: [\"stream_id\", \"_field\"])\n  |> last()\n  |> pivot(rowKey: [\"stream_id\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> keep(columns: [\"stream_id\", \"label\", \"confidence\"])"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Confidence over time, per stream",
+      "datasource": { "type": "influxdb", "uid": "influxdb_sentiment" },
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 12 },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "min": 0, "max": 1, "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "mean"] }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "influxdb", "uid": "influxdb_sentiment" },
+          "query": "from(bucket: \"audio_metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"inference_sentiment\" and r._field == \"confidence\")\n  |> group(columns: [\"stream_id\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "piechart",
+      "title": "Sentiment distribution",
+      "datasource": { "type": "influxdb", "uid": "influxdb_sentiment" },
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 12 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "color": { "mode": "fixed" }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "approval" }, "properties": [ { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } } ] },
+          { "matcher": { "id": "byName", "options": "disapproval" }, "properties": [ { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } } ] },
+          { "matcher": { "id": "byName", "options": "neutral" }, "properties": [ { "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } } ] }
+        ]
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true }, "pieType": "donut", "legend": { "displayMode": "list", "placement": "right", "values": ["value", "percent"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "influxdb", "uid": "influxdb_sentiment" },
+          "query": "from(bucket: \"audio_metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"inference_sentiment\" and r._field == \"label\")\n  |> group(columns: [\"_value\"])\n  |> reduce(identity: {label: \"\", count: 0.0}, fn: (r, accumulator) => ({label: r._value, count: accumulator.count + 1.0}))\n  |> group()\n  |> pivot(rowKey: [\"label\"], columnKey: [\"label\"], valueColumn: \"count\")"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Active streams",
+      "datasource": { "type": "influxdb", "uid": "influxdb_sentiment" },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 21 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [ { "color": "red", "value": null }, { "color": "yellow", "value": 1 }, { "color": "green", "value": 4 } ] } } },
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "influxdb", "uid": "influxdb_sentiment" },
+          "query": "from(bucket: \"audio_metrics\")\n  |> range(start: -2m)\n  |> filter(fn: (r) => r._measurement == \"inference_sentiment\" and r._field == \"confidence\")\n  |> group()\n  |> distinct(column: \"stream_id\")\n  |> count()"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "gauge",
+      "title": "Average confidence",
+      "datasource": { "type": "influxdb", "uid": "influxdb_sentiment" },
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 21 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "thresholds": { "steps": [ { "color": "red", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "green", "value": 0.75 } ] } } },
+      "options": { "reduceOptions": { "calcs": ["mean"], "fields": "" }, "showThresholdMarkers": true },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "influxdb", "uid": "influxdb_sentiment" },
+          "query": "from(bucket: \"audio_metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"inference_sentiment\" and r._field == \"confidence\")\n  |> mean()"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Per-class score (mean across streams)",
+      "datasource": { "type": "influxdb", "uid": "influxdb_sentiment" },
+      "gridPos": { "h": 5, "w": 16, "x": 8, "y": 21 },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "min": 0, "max": 1, "custom": { "drawStyle": "line", "fillOpacity": 15, "stacking": { "mode": "none" }, "showPoints": "never" } },
+        "overrides": [
+          { "matcher": { "id": "byFrameRefID", "options": "score_approval" }, "properties": [ { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } } ] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "influxdb", "uid": "influxdb_sentiment" },
+          "query": "from(bucket: \"audio_metrics\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"inference_sentiment\" and (r._field == \"score_approval\" or r._field == \"score_disapproval\" or r._field == \"score_neutral\"))\n  |> group(columns: [\"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
+        }
+      ]
+    }
+  ]
+}

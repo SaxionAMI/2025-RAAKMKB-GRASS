@@ -1,0 +1,148 @@
+# Football Stadium Sentiment — full stack.
+#
+#   minio      object storage for models/artifacts        :9000 / :9001 (console)
+#   influxdb   sentiment time-series                       :8086
+#   grafana    dashboards (incl. the stadium canvas)       :3001
+#   mediamtx   RTSP/WebRTC media server for live streams   :8554 / :8889 / :9997 (api)
+#   dagster    training + batch inference UI               :3000
+#   inference  streaming sentiment inference (SSE)          :8000
+#
+# dagster + inference share ONE image (grass/app:local), built once.
+#
+# Build (needs your SSH key for the private framework repo):
+#   eval "$(ssh-agent -s)" && ssh-add
+#   DOCKER_BUILDKIT=1 docker compose build --ssh default
+#   docker compose up -d
+#
+# GPU (nvidia-smi works in WSL):
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+
+services:
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["minio_data:/data"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [grass]
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin} &&
+      mc mb -p local/${MINIO_BUCKET_NAME:-audioops-bucket} || true &&
+      echo 'bucket ready';"
+    networks: [grass]
+
+  influxdb:
+    image: influxdb:2.7
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=${INFLUXDB_USERNAME:-admin}
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUXDB_PASSWORD:-adminpassword}
+      - DOCKER_INFLUXDB_INIT_ORG=${INFLUXDB_ORG:-audioops}
+      - DOCKER_INFLUXDB_INIT_BUCKET=${INFLUXDB_BUCKET:-audio_metrics}
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUXDB_TOKEN:-dev-token-change-me}
+    ports: ["8086:8086"]
+    volumes: ["influxdb_data:/var/lib/influxdb2"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [grass]
+
+  grafana:
+    image: grafana/grafana:latest
+    depends_on:
+      influxdb: { condition: service_healthy }
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_DEFAULT_THEME=dark
+      - INFLUXDB_ORG=${INFLUXDB_ORG:-audioops}
+      - INFLUXDB_BUCKET=${INFLUXDB_BUCKET:-audio_metrics}
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN:-dev-token-change-me}
+      - GF_PANELS_DISABLE_SANITIZE_HTML=true
+    ports: ["3001:3000"]
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana_data:/var/lib/grafana
+    networks: [grass]
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    ports:
+      - "8554:8554"     # RTSP
+      - "8889:8889"     # WebRTC
+      - "8888:8888"     # HLS
+      - "9997:9997"     # API (the stream sensor queries this)
+    volumes:
+      - ./mediamtx/mediamtx.yml:/mediamtx.yml
+    networks: [grass]
+
+  dagster:
+    image: grass/app:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: base
+      args: { FRAMEWORK_REF: "${FRAMEWORK_REF:-v0.1.0}" }
+    command: ["dagster", "dev", "-m", "audio_ops_dagster.definitions", "-h", "0.0.0.0", "-p", "3000"]
+    ports: ["3000:3000"]
+    env_file: [.env]
+    environment:
+      - AUDIO_OPS_TASKS_DIR=/app/tasks
+      - DAGSTER_HOME=/app/dagster_home
+    volumes:
+      - ./tasks:/app/tasks
+      - ./audio_input:/app/audio_input
+      - ./storage:/app/storage
+      - ./dagster_home:/app/dagster_home
+      - ./mlruns:/app/mlruns
+    depends_on:
+      minio: { condition: service_healthy }
+      influxdb: { condition: service_healthy }
+    networks: [grass]
+
+  inference:
+    image: grass/app:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: base
+      args: { FRAMEWORK_REF: "${FRAMEWORK_REF:-v0.1.0}" }
+    command: ["audio-ops-serve"]
+    ports: ["8000:8000"]
+    env_file: [.env]
+    environment:
+      - AUDIO_OPS_TASKS_DIR=/app/tasks
+      - TASKS_DIR=/app/tasks
+      - MODELS_DIR=/app/storage/models
+    volumes:
+      - ./tasks:/app/tasks
+      - ./storage:/app/storage
+    depends_on:
+      influxdb: { condition: service_healthy }
+      mediamtx: { condition: service_started }
+    networks: [grass]
+
+networks:
+  grass:
+    driver: bridge
+
+volumes:
+  minio_data:
+  influxdb_data:
+  grafana_data:

@@ -95,3 +95,70 @@ Local by default. To sync artifacts to MinIO/S3, set `STORAGE_BACKEND=minio`
 + `MINIO_*` in `.env` and flip `use_remote_storage: true` in
 `tasks/sentiment/config.yaml`. InfluxDB metrics: `ENABLE_INFLUXDB=true` + the
 `INFLUXDB_*` vars.
+
+---
+
+## Full stack (Docker) — MinIO + InfluxDB + Grafana + MediaMTX + live inference
+
+The project ships a `docker-compose.yml` that stands up the whole demo stack
+around the packaged framework:
+
+| Service   | Purpose                                   | URL |
+|-----------|-------------------------------------------|-----|
+| dagster   | training + batch inference UI             | http://localhost:3000 |
+| inference | streaming sentiment (SSE), reads RTSP     | http://localhost:8000 |
+| grafana   | dashboards incl. the stadium canvas       | http://localhost:3001 |
+| minio     | object storage (models/artifacts)         | http://localhost:9001 (console) |
+| influxdb  | sentiment time-series                     | http://localhost:8086 |
+| mediamtx  | RTSP/WebRTC media server                  | rtsp://localhost:8554 |
+
+### Build & run
+
+The image installs the framework from the **private** repo, so the build needs
+your SSH key available to BuildKit:
+
+```bash
+cp .env.example .env          # then edit INFLUXDB_TOKEN etc. for anything non-local
+eval "$(ssh-agent -s)" && ssh-add
+make build                    # DOCKER_BUILDKIT=1 docker compose build --ssh default
+make up                       # or: make up-gpu
+```
+
+Grafana → http://localhost:3001 (admin/admin) → the **Football Stadium — Live
+Crowd Sentiment** dashboard is auto-provisioned.
+
+### Feeding it live streams
+
+Publish up to N concurrent RTSP streams to MediaMTX as `stream1..streamN`:
+
+```bash
+ffmpeg -re -stream_loop -1 -i match1.mp4 -an -f rtsp rtsp://localhost:8554/stream1
+# ...stream2, stream3, stream4 in parallel  (or: put clips in demo_clips/ and `make publish-streams`)
+```
+
+The framework's stream sensor sees them via MediaMTX's API and registers each
+with the inference service, which runs `sentiment` per stream and writes
+`inference_sentiment` points to InfluxDB tagged with `stream_id`. Every Grafana
+panel keys off `stream_id`, so 4 streams show as 4 series automatically.
+
+### The dashboard
+
+Auto-provisioned panels (querying measurement `inference_sentiment`):
+confidence-over-time per stream, per-class score, sentiment distribution, active
+stream count, average confidence, and a **latest-sentiment-per-stream table**.
+
+### Honest caveats
+
+- **The stadium Canvas is a starter, not a finished visual.** Grafana has no
+  built-in "stadium" panel. The provided `canvas` panel has four placeholder
+  zones and the right query wired in; you add a stadium background image and bind
+  each zone's color to its stream's sentiment in the panel editor. The table next
+  to it shows the same data and works immediately, so the dashboard is useful
+  before the art is done.
+- **4 concurrent streams is the target, not a guarantee.** The inference service
+  is built to handle multiple streams, but real concurrent throughput depends on
+  your hardware (CPU vs GPU) and model size. Start with 2 streams, confirm both
+  appear in Grafana, then scale to 4.
+- **Change the InfluxDB token** (`INFLUXDB_TOKEN`) before anything beyond a local
+  demo. The Flux queries assume bucket `audio_metrics`; if you rename it, update
+  the dashboard queries.

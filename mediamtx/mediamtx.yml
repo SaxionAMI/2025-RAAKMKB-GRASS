@@ -1,0 +1,17 @@
+# MediaMTX — media server for live RTSP/WebRTC ingest.
+logLevel: info
+api: yes
+apiAddress: :9997          # the framework's stream sensor polls this for active paths
+
+rtsp: yes
+rtspAddress: :8554
+webrtc: yes
+webrtcAddress: :8889
+hls: yes
+hlsAddress: :8888
+
+# Any path can be published to; publishers create them on the fly.
+# Publish 4 concurrent streams as stream1..stream4, e.g. with ffmpeg:
+#   ffmpeg -re -i match_cam1.mp4 -c:a aac -f rtsp rtsp://localhost:8554/stream1
+paths:
+  all_others:
