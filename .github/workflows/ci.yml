@@ -1,0 +1,31 @@
+# Checks that the sentiment task works with the pinned framework version.
+# While the framework repository is private, add a repository secret
+# FRAMEWORK_TOKEN (a fine-grained token with read access to
+# SaxionAMI/2026-AMI-AudioOpsFramework). Once it is public, no secret is needed.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libsndfile1
+      - name: Install
+        env:
+          FRAMEWORK_TOKEN: ${{ secrets.FRAMEWORK_TOKEN }}
+        run: |
+          REF=$(grep -m1 -oP 'AudioOpsFramework.git@\K[^"]+' pyproject.toml)
+          AUTH=${FRAMEWORK_TOKEN:+x-access-token:${FRAMEWORK_TOKEN}@}
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install "audio-ops-framework[train,serve] @ git+https://${AUTH}github.com/SaxionAMI/2026-AMI-AudioOpsFramework.git@${REF}" pytest
+      - run: pip install shellcheck-py && shellcheck -S warning scripts/*.sh
+      - run: AUDIO_OPS_TASKS_DIR=tasks audio-ops validate sentiment
+      - run: pytest -q

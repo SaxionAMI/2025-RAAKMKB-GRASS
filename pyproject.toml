@@ -1,24 +1,30 @@
-[tool.poetry]
+[project]
 name = "football-stadium-sentiment"
-version = "0.1.0"
-description = "Football stadium crowd-sentiment project, built on the Audio Ops Framework."
-authors = ["Saxion AMI"]
+version = "0.2.0"
+description = "Crowd sentiment in football stadiums (GRASS), built on the Audio Ops Framework."
+authors = [{ name = "Saxion University of Applied Sciences, research group Ambient Intelligence" }]
+license = "Apache-2.0"
+requires-python = ">=3.10,<3.15"
+dependencies = [
+    # The framework from GitHub, pinned to a release tag. The extras install the
+    # Dagster pipeline (train), the inference API (serve), MinIO/S3 (s3) and
+    # InfluxDB (metrics).
+    "audio-ops-framework[train,serve,s3,metrics] @ git+https://github.com/SaxionAMI/2026-AMI-AudioOpsFramework.git@v1.2.0",
+    # The sentiment model is a torchvision ResNet18.
+    "torchvision>=0.19",
+]
+
+# Other ways to get the framework (replace the line above):
+#   While the repository is private, over SSH (needs your key on GitHub):
+#     "audio-ops-framework[train,serve,s3,metrics] @ git+ssh://git@github.com/SaxionAMI/2026-AMI-AudioOpsFramework.git@v1.2.0"
+#   A checkout next to this repo, edits picked up live: remove the line above and
+#     poetry run pip install -e "../2026-AMI-AudioOpsFramework[train,serve,s3,metrics]"
+
+[tool.poetry]
 package-mode = false
 
-[tool.poetry.dependencies]
-python = ">=3.10,<3.15"
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0"
 
-# The framework, pulled straight from GitHub. Pin to a tag for reproducibility.
-audio-ops-framework = { git = "git@github.com:SaxionAMI/2026-AMI-AudioOpsFramework.git", tag = "v0.1.0" }
-
-# --- Alternatives ---------------------------------------------------------
-# Co-developing the framework locally (edits picked up live, no re-install):
-# audio-ops-framework = { path = "../2026-AMI-AudioOpsFramework", develop = true }
-# Track a branch instead of a tag:
-# audio-ops-framework = { git = "git@github.com:SaxionAMI/2026-AMI-AudioOpsFramework.git", branch = "main" }
-# HTTPS instead of SSH (needs a token for a private repo):
-# audio-ops-framework = { git = "https://github.com/SaxionAMI/2026-AMI-AudioOpsFramework.git", tag = "v0.1.0" }
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[tool.pytest.ini_options]
+testpaths = ["tests"]

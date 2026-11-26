@@ -1,21 +1,28 @@
-# Football Stadium Sentiment — full stack.
+# Football stadium sentiment (GRASS): the full stack.
 #
-#   minio      object storage for models/artifacts        :9000 / :9001 (console)
-#   influxdb   sentiment time-series                       :8086
-#   grafana    dashboards (incl. the stadium canvas)       :3001
-#   mediamtx   RTSP/WebRTC media server for live streams   :8554 / :8889 / :9997 (api)
-#   dagster    training + batch inference UI               :3000
-#   inference  streaming sentiment inference (SSE)          :8000
+#   minio      object storage for models and artifacts      :9000, console :9001
+#   influxdb   sentiment time series                        :8086
+#   grafana    dashboards                                    :3001
+#   mediamtx   RTSP/WebRTC media server for live streams     :8554, API :9997
+#   dagster    training and batch inference UI               :3000
+#   inference  live sentiment per stream (SSE + InfluxDB)    :8000
 #
-# dagster + inference share ONE image (grass/app:local), built once.
-#
-# Build (needs your SSH key for the private framework repo):
-#   eval "$(ssh-agent -s)" && ssh-add
-#   DOCKER_BUILDKIT=1 docker compose build --ssh default
-#   docker compose up -d
-#
-# GPU (nvidia-smi works in WSL):
+# dagster and inference share one image (grass/app:local), built once:
+#   docker compose build && docker compose up -d
+# GPU:
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# Settings inside the containers point at the other services by name. They are
+# set below and override .env, so the same .env also works for local runs.
+
+x-app-env: &app-env
+  AUDIO_OPS_TASKS_DIR: /app/tasks
+  AUDIO_OPS_DISABLE_BUILTIN_TASKS: "true"
+  STORAGE_BACKEND: minio
+  MINIO_ENDPOINT: http://minio:9000
+  ENABLE_INFLUXDB: "true"
+  INFLUXDB_URL: http://influxdb:8086
+  MLFLOW_TRACKING_URI: sqlite:////app/mlruns/mlflow.db
 
 services:
   minio:
@@ -87,7 +94,7 @@ services:
       - "8554:8554"     # RTSP
       - "8889:8889"     # WebRTC
       - "8888:8888"     # HLS
-      - "9997:9997"     # API (the stream sensor queries this)
+      - "9997:9997"     # API (the inference service polls it for new streams)
     volumes:
       - ./mediamtx/mediamtx.yml:/mediamtx.yml
     networks: [grass]
@@ -98,13 +105,15 @@ services:
       context: .
       dockerfile: Dockerfile
       target: base
-      args: { FRAMEWORK_REF: "${FRAMEWORK_REF:-v0.1.0}" }
+      args:
+        FRAMEWORK_REF: "${FRAMEWORK_REF:-v1.2.0}"
+        TORCH_INDEX: "${TORCH_INDEX:-}"
     command: ["dagster", "dev", "-m", "audio_ops_dagster.definitions", "-h", "0.0.0.0", "-p", "3000"]
     ports: ["3000:3000"]
     env_file: [.env]
     environment:
-      - AUDIO_OPS_TASKS_DIR=/app/tasks
-      - DAGSTER_HOME=/app/dagster_home
+      <<: *app-env
+      DAGSTER_HOME: /app/dagster_home
     volumes:
       - ./tasks:/app/tasks
       - ./audio_input:/app/audio_input
@@ -122,14 +131,18 @@ services:
       context: .
       dockerfile: Dockerfile
       target: base
-      args: { FRAMEWORK_REF: "${FRAMEWORK_REF:-v0.1.0}" }
-    command: ["audio-ops-serve"]
+      args:
+        FRAMEWORK_REF: "${FRAMEWORK_REF:-v1.2.0}"
+        TORCH_INDEX: "${TORCH_INDEX:-}"
+    command: ["audio-ops", "serve", "--host", "0.0.0.0", "--port", "8000"]
     ports: ["8000:8000"]
     env_file: [.env]
     environment:
-      - AUDIO_OPS_TASKS_DIR=/app/tasks
-      - TASKS_DIR=/app/tasks
-      - MODELS_DIR=/app/storage/models
+      <<: *app-env
+      # Register every stream published to MediaMTX (stream1, stream2, ...).
+      STREAM_AUTODISCOVER: "true"
+      MEDIAMTX_API_URL: http://mediamtx:9997
+      RTSP_BASE_URL: rtsp://mediamtx:8554
     volumes:
       - ./tasks:/app/tasks
       - ./storage:/app/storage

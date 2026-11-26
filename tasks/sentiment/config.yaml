@@ -1,28 +1,28 @@
-# tasks/sentiment/config.yaml — football stadium crowd sentiment.
-task_name: sentiment
+# Football stadium crowd sentiment. All keys:
+# https://saxionami.github.io/2026-AMI-AudioOpsFramework/reference/task-config/
 task_type: classification
+archetype: trainable_model        # train, evaluate, batch_infer and serve
 
-# Full arc: train + evaluate + batch_infer + serve.
-archetype: trainable_model
+input_dir: audio_input/sentiment/CrowdAudioDataport   # <label>/*.wav underneath
+output_dir: storage/sentiment
+
+class_labels: [approval, disapproval, neutral]
 
 feature_type: spectrogram
-input_dir: "audio_input/sentiment/CrowdAudioDataport"   # <label>/*.wav underneath
-output_dir: "storage/sentiment"
-split_strategy: "group"          # keeps segments of one recording out of train/test
+segment_duration: 1.0             # seconds per segment, also the live window
+input_shape: [1, 128, 32]         # spectrogram of a 1 s segment at 16 kHz
 
-num_classes: 3
-class_labels:
-  - "approval"
-  - "disapproval"
-  - "neutral"
+# Keep all segments of one recording in the same split.
+split_strategy: group
+# If one match recording is cut into several files (match3_001.wav,
+# match3_002.wav, ...), uncomment this so the whole match stays in one split:
+# group_pattern: '^(.+)_\d+$'
 
-model_architecture: resnet18     # metadata; the task builds resnet18 in build_model
-input_shape: [1, 128, 87]
 batch_size: 32
 epochs: 10
 learning_rate: 0.001
+# class_weights: [1.0, 1.0, 1.0]  # approval, disapproval, neutral
 
-# Local-first. Set true (and configure MINIO_* / STORAGE_BACKEND=minio) to sync
-# features/datasets/checkpoints/results to object storage after each step.
+# Set to true (with STORAGE_BACKEND=minio and MINIO_*) to copy features,
+# datasets, checkpoints and results to object storage after each step.
 use_remote_storage: false
-# storage_bucket_prefix: "sentiment_v2"

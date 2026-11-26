@@ -1,13 +1,16 @@
 # GPU overlay: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+# Needs the NVIDIA Container Toolkit and the default (CUDA) torch build.
 services:
   dagster:
-    environment: [DEVICE=cuda]
+    environment:
+      DEVICE: cuda
     deploy:
       resources:
         reservations:
           devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }]
   inference:
-    environment: [DEVICE=cuda]
+    environment:
+      DEVICE: cuda
     deploy:
       resources:
         reservations:

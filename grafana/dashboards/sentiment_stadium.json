@@ -11,7 +11,7 @@
   "time": { "from": "now-15m", "to": "now" },
   "timepicker": {},
   "timezone": "",
-  "title": "Football Stadium — Live Crowd Sentiment",
+  "title": "Football Stadium: Live Crowd Sentiment",
   "uid": "grass-sentiment",
   "version": 1,
   "templating": { "list": [] },
@@ -27,7 +27,7 @@
     {
       "id": 1,
       "type": "canvas",
-      "title": "Stadium — sentiment per stream (replace background with stadium image)",
+      "title": "Stadium: sentiment per stream (replace background with stadium image)",
       "description": "Starter canvas. Add a stadium image as the background, then bind each zone element to a stream's latest sentiment. Drives off the same query as the table below.",
       "datasource": { "type": "influxdb", "uid": "influxdb_sentiment" },
       "gridPos": { "h": 11, "w": 16, "x": 0, "y": 1 },

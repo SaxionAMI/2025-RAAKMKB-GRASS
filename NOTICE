@@ -1,0 +1,11 @@
+GRASS: crowd sentiment in football stadiums
+Copyright 2026 Saxion University of Applied Sciences
+(research group Ambient Intelligence, https://www.saxion.edu/ami)
+
+Developed in the RAAK-mkb project GRASS (Gastvrij en Respectvol gedrAg van
+Supporters in Stadions), co-funded by Regieorgaan SIA.
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+It depends on the Audio Ops Framework
+(https://github.com/SaxionAMI/2026-AMI-AudioOpsFramework), also Apache-2.0.
+Audio recordings used for training are not included.
